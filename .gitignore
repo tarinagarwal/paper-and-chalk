@@ -13,6 +13,11 @@ next-env.d.ts
 # turbo
 .turbo/
 
+# playwright
+test-results/
+playwright-report/
+blob-report/
+
 # env
 .env
 .env.*

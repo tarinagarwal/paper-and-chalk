@@ -2,7 +2,7 @@
 
 Realtime, collaborative ink for PDFs, notebooks and infinite whiteboards, in the browser.
 
-> Early development. The repo currently holds the project skeleton: every service runs, nothing user-facing yet.
+> Early development. Every service runs; the marketing site and the app shell are in place. The editor comes next.
 
 ## Stack
 
@@ -53,3 +53,11 @@ pnpm dev
 | `pnpm build`       | Production builds                             |
 | `pnpm db:migrate`  | Apply database migrations                     |
 | `pnpm db:studio`   | Open Drizzle Studio                           |
+
+End-to-end tests (Playwright, against a production build):
+
+```sh
+pnpm --filter @pc/web build
+pnpm --filter @pc/web exec playwright install chromium   # first time only
+pnpm --filter @pc/web e2e
+```

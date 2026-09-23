@@ -16,7 +16,9 @@ FROM base AS build
 COPY --from=prune /repo/out/json/ .
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --frozen-lockfile
 COPY --from=prune /repo/out/full/ .
-ENV NEXT_TELEMETRY_DISABLED=1
+# Public origin, inlined into the client bundle at build time.
+ARG NEXT_PUBLIC_SITE_URL=http://localhost:3000
+ENV NEXT_TELEMETRY_DISABLED=1 NEXT_PUBLIC_SITE_URL=$NEXT_PUBLIC_SITE_URL
 RUN pnpm turbo run build --filter=@pc/web
 
 FROM node:${NODE_VERSION}-alpine AS runtime

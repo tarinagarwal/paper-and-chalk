@@ -21,8 +21,13 @@ export const env = createEnv({
     GCS_BUCKET_EXPORTS: bucket,
     GCS_BUCKET_THUMBNAILS: bucket,
   },
-  client: {},
-  experimental__runtimeEnv: {},
+  client: {
+    /** Public origin of the site, used for canonical URLs, sitemap and Open Graph. */
+    NEXT_PUBLIC_SITE_URL: z.url(),
+  },
+  experimental__runtimeEnv: {
+    NEXT_PUBLIC_SITE_URL: process.env.NEXT_PUBLIC_SITE_URL,
+  },
   emptyStringAsUndefined: true,
   // Docker image builds have no runtime secrets; the container validates at startup instead.
   skipValidation: process.env.SKIP_ENV_VALIDATION === "1",

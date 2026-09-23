@@ -43,6 +43,7 @@ jobs:
     env:
       DATABASE_URL: postgres://pc:pc@localhost:5432/paper_chalk
       REDIS_URL: redis://localhost:6379
+      NEXT_PUBLIC_SITE_URL: http://localhost:3000
 
     steps:
       - uses: actions/checkout@v7
@@ -77,6 +78,52 @@ jobs:
 
       - name: Build
         run: pnpm turbo run build
+
+  e2e:
+    name: End-to-end (Playwright)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      # The web server validates these at startup; the pages under test never connect to them.
+      DATABASE_URL: postgres://pc:pc@localhost:5432/paper_chalk
+      REDIS_URL: redis://localhost:6379
+      GCS_PROJECT_ID: paper-chalk-ci
+      GCS_BUCKET_ORIGINALS: originals
+      GCS_BUCKET_YJS_SNAPSHOTS: yjs-snapshots
+      GCS_BUCKET_ASSETS: assets
+      GCS_BUCKET_EXPORTS: exports
+      GCS_BUCKET_THUMBNAILS: thumbnails
+      NEXT_PUBLIC_SITE_URL: http://localhost:3100
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Install Chromium
+        run: pnpm --filter @pc/web exec playwright install --with-deps chromium
+
+      - name: Build web
+        run: pnpm turbo run build --filter=@pc/web
+
+      - name: Run Playwright
+        run: pnpm --filter @pc/web e2e
+
+      - name: Upload report
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report
+          path: |
+            apps/web/playwright-report
+            apps/web/test-results
+          retention-days: 7
 
   docker:
     name: Docker image (${{ matrix.app }})

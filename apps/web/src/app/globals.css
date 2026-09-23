@@ -5,6 +5,32 @@
 /* Paper (light) is the default; Chalk (dark) applies under .dark. */
 @custom-variant dark (&:is(.dark *));
 
+/* Type scale, spacing and motion. Static values; colours below switch with the theme. */
+@theme {
+  --text-display: 4.5rem;
+  --text-display--line-height: 1;
+  --text-display--letter-spacing: -0.025em;
+  --text-h1: 3.5rem;
+  --text-h1--line-height: 1.04;
+  --text-h1--letter-spacing: -0.022em;
+  --text-h2: 2.5rem;
+  --text-h2--line-height: 1.08;
+  --text-h2--letter-spacing: -0.018em;
+  --text-h3: 1.625rem;
+  --text-h3--line-height: 1.2;
+  --text-h3--letter-spacing: -0.01em;
+  --text-lead: 1.1875rem;
+  --text-lead--line-height: 1.6;
+  --text-eyebrow: 0.75rem;
+  --text-eyebrow--line-height: 1rem;
+  --text-eyebrow--letter-spacing: 0.08em;
+
+  --spacing-section: 7.5rem;
+  --spacing-section-sm: 4.5rem;
+
+  --ease-ink: cubic-bezier(0.65, 0, 0.35, 1);
+}
+
 @theme inline {
   --font-sans: var(--font-geist), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-geist-mono), ui-monospace, monospace;
@@ -63,6 +89,13 @@
   --color-sticky-blush: var(--sticky-blush);
   --color-sticky-sage: var(--sticky-sage);
   --color-sticky-sky: var(--sticky-sky);
+  --color-paper-sheet: var(--paper-sheet);
+  --color-paper-line: var(--paper-line);
+  --color-paper-head: var(--paper-head);
+  --color-chalkboard: var(--chalkboard);
+  --color-chalkboard-dot: var(--chalkboard-dot);
+  --color-chalk: var(--chalk);
+  --color-logo-edge: var(--logo-edge);
 
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
@@ -74,6 +107,7 @@
 
   --shadow-float: var(--float-shadow);
   --shadow-paper: var(--paper-shadow);
+  --shadow-popover: var(--popover-shadow);
 }
 
 /* Paper: warm drafting paper, graphite ink, one red-pencil accent. */
@@ -132,6 +166,16 @@
   --sticky-sky: #cadcf1;
   --float-shadow: 0 1px 0 rgb(28 27 25 / 0.05), 0 8px 24px -10px rgb(28 27 25 / 0.22);
   --paper-shadow: 0 1px 2px rgb(28 27 25 / 0.08), 0 12px 28px -14px rgb(28 27 25 / 0.28);
+  --popover-shadow: 0 1px 0 rgb(28 27 25 / 0.04), 0 16px 40px -12px rgb(28 27 25 / 0.28);
+
+  /* Surfaces that keep their identity in both themes. */
+  --paper-sheet: #ffffff;
+  --paper-line: #ddd8ce;
+  --paper-head: #8f897e;
+  --chalkboard: #1d1e21;
+  --chalkboard-dot: #2c2e33;
+  --chalk: #ece7dc;
+  --logo-edge: #1c1b19;
 }
 
 /* Chalk: chalkboard dark, chalk-white ink, brighter red pencil. */
@@ -188,6 +232,15 @@
   --sticky-sky: #a9c4e4;
   --float-shadow: 0 1px 0 rgb(0 0 0 / 0.3), 0 10px 28px -10px rgb(0 0 0 / 0.6);
   --paper-shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 14px 30px -12px rgb(0 0 0 / 0.7);
+  --popover-shadow: 0 1px 0 rgb(0 0 0 / 0.3), 0 18px 44px -12px rgb(0 0 0 / 0.7);
+
+  --paper-sheet: #e8e4da;
+  --paper-line: #c9c4b8;
+  --paper-head: #7c766b;
+  --chalkboard: #1d1e21;
+  --chalkboard-dot: #2c2e33;
+  --chalk: #ece7dc;
+  --logo-edge: #3d3f44;
 }
 
 /* The dotted canvas ground used behind boards and empty states. */
@@ -196,6 +249,297 @@
   background-image: radial-gradient(var(--dot) 1px, transparent 1.2px);
   background-size: 24px 24px;
   background-position: 12px 12px;
+}
+
+/* Page width container used by every marketing section. */
+@utility container-page {
+  width: 100%;
+  max-width: 78rem;
+  margin-inline: auto;
+  padding-inline: 1rem;
+  @media (width >= 40rem) {
+    padding-inline: 1.5rem;
+  }
+  @media (width >= 64rem) {
+    padding-inline: 2.5rem;
+  }
+}
+
+/* Small mono label, like a note in the margin. */
+@utility eyebrow {
+  font-family: var(--font-mono);
+  font-size: var(--text-eyebrow);
+  line-height: var(--text-eyebrow--line-height);
+  letter-spacing: var(--text-eyebrow--letter-spacing);
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+/*
+ * Hero ink loop (12 s), started after first paint. Base styles are the finished drawing and the
+ * keyframes start from blank, so with reduced motion the finished drawing is what shows.
+ */
+@layer components {
+  .ink-scene {
+    --cycle: 12s;
+  }
+  /* Higher specificity than the per-element `animation` shorthands below. */
+  svg.ink-scene * {
+    animation-delay: 0.9s;
+    animation-fill-mode: backwards;
+  }
+
+  .ink-sweep {
+    transform-box: fill-box;
+    transform-origin: left center;
+  }
+  .ink-draw {
+    stroke-dasharray: 1;
+    stroke-dashoffset: 0;
+  }
+  .ink-pop {
+    transform-box: fill-box;
+    transform-origin: center;
+  }
+  .ink-reveal {
+    transform-box: fill-box;
+    transform-origin: right center;
+    transform: scaleX(0);
+  }
+
+  .ink-hl1 {
+    animation: ink-hl1 var(--cycle) var(--ease-ink) infinite;
+  }
+  .ink-hl2 {
+    animation: ink-hl2 var(--cycle) var(--ease-ink) infinite;
+  }
+  .ink-circle {
+    animation: ink-circle var(--cycle) var(--ease-ink) infinite;
+  }
+  .ink-arrow {
+    animation: ink-arrow var(--cycle) linear infinite;
+  }
+  .ink-arrow-head {
+    animation: ink-arrow-head var(--cycle) linear infinite;
+  }
+  .ink-sticky {
+    animation: ink-sticky var(--cycle) var(--ease-ink) infinite;
+  }
+  .ink-sticky-text {
+    animation: ink-sticky-text var(--cycle) steps(12, end) infinite;
+  }
+  .ink-connector {
+    animation: ink-connector var(--cycle) var(--ease-ink) infinite;
+  }
+  .ink-connector-head {
+    animation: ink-connector-head var(--cycle) linear infinite;
+  }
+  .ink-maya {
+    transform: translate(600px, 318px);
+    animation: ink-maya var(--cycle) var(--ease-ink) infinite;
+  }
+  .ink-jun {
+    transform: translate(646px, 226px);
+    animation: ink-jun 7s ease-in-out infinite;
+  }
+
+  @keyframes ink-hl1 {
+    0%,
+    3% {
+      transform: scaleX(0);
+      opacity: 1;
+    }
+    11% {
+      transform: scaleX(1);
+    }
+    88% {
+      opacity: 1;
+    }
+    94%,
+    100% {
+      transform: scaleX(1);
+      opacity: 0;
+    }
+  }
+  @keyframes ink-hl2 {
+    0%,
+    11% {
+      transform: scaleX(0);
+      opacity: 1;
+    }
+    18% {
+      transform: scaleX(1);
+    }
+    88% {
+      opacity: 1;
+    }
+    94%,
+    100% {
+      transform: scaleX(1);
+      opacity: 0;
+    }
+  }
+  @keyframes ink-circle {
+    0%,
+    20% {
+      stroke-dashoffset: 1;
+      opacity: 1;
+    }
+    32% {
+      stroke-dashoffset: 0;
+    }
+    88% {
+      opacity: 1;
+    }
+    94%,
+    100% {
+      stroke-dashoffset: 0;
+      opacity: 0;
+    }
+  }
+  @keyframes ink-arrow {
+    0%,
+    33% {
+      stroke-dashoffset: 1;
+      opacity: 1;
+    }
+    45% {
+      stroke-dashoffset: 0;
+    }
+    88% {
+      opacity: 1;
+    }
+    94%,
+    100% {
+      stroke-dashoffset: 0;
+      opacity: 0;
+    }
+  }
+  @keyframes ink-arrow-head {
+    0%,
+    45% {
+      stroke-dashoffset: 1;
+      opacity: 1;
+    }
+    48% {
+      stroke-dashoffset: 0;
+    }
+    88% {
+      opacity: 1;
+    }
+    94%,
+    100% {
+      stroke-dashoffset: 0;
+      opacity: 0;
+    }
+  }
+  @keyframes ink-sticky {
+    0%,
+    47% {
+      opacity: 0;
+      transform: scale(0.9) translateY(6px);
+    }
+    52% {
+      opacity: 1;
+      transform: scale(1) translateY(0);
+    }
+    88% {
+      opacity: 1;
+    }
+    94%,
+    100% {
+      opacity: 0;
+    }
+  }
+  @keyframes ink-sticky-text {
+    0%,
+    52% {
+      transform: scaleX(1);
+    }
+    62%,
+    100% {
+      transform: scaleX(0);
+    }
+  }
+  @keyframes ink-connector {
+    0%,
+    63% {
+      stroke-dashoffset: 1;
+      opacity: 1;
+    }
+    71% {
+      stroke-dashoffset: 0;
+    }
+    88% {
+      opacity: 1;
+    }
+    94%,
+    100% {
+      stroke-dashoffset: 0;
+      opacity: 0;
+    }
+  }
+  @keyframes ink-connector-head {
+    0%,
+    71% {
+      stroke-dashoffset: 1;
+      opacity: 1;
+    }
+    74% {
+      stroke-dashoffset: 0;
+    }
+    88% {
+      opacity: 1;
+    }
+    94%,
+    100% {
+      stroke-dashoffset: 0;
+      opacity: 0;
+    }
+  }
+  @keyframes ink-maya {
+    0%,
+    30% {
+      transform: translate(318px, 250px);
+      opacity: 0;
+    }
+    33% {
+      transform: translate(306px, 296px);
+      opacity: 1;
+    }
+    39% {
+      transform: translate(372px, 305px);
+    }
+    45% {
+      transform: translate(441px, 339px);
+    }
+    58% {
+      transform: translate(600px, 318px);
+    }
+    88% {
+      opacity: 1;
+    }
+    94%,
+    100% {
+      transform: translate(600px, 318px);
+      opacity: 0;
+    }
+  }
+  @keyframes ink-jun {
+    0%,
+    100% {
+      transform: translate(646px, 226px);
+    }
+    50% {
+      transform: translate(628px, 238px);
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ink-scene * {
+    animation: none !important;
+  }
 }
 
 @layer base {
@@ -211,6 +555,29 @@
   }
   body {
     @apply bg-background text-foreground;
+    text-rendering: optimizeLegibility;
+  }
+  ::selection {
+    background: color-mix(in oklab, var(--highlight) 100%, transparent);
+    color: inherit;
+  }
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+  html {
+    scroll-behavior: smooth;
+    scroll-padding-top: 5rem;
   }
   button:not(:disabled),
   [role="button"]:not(:disabled) {
