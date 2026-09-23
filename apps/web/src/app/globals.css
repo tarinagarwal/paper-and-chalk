@@ -1,0 +1,219 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+/* Paper (light) is the default; Chalk (dark) applies under .dark. */
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --font-sans: var(--font-geist), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+  /* Titles, sticky notes and margin notes. */
+  --font-display: var(--font-newsreader), Georgia, serif;
+  --font-heading: var(--font-display);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  /* Paper & Chalk tokens beyond shadcn's set. */
+  --color-canvas: var(--canvas);
+  --color-dot: var(--dot);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-ink-2: var(--ink-2);
+  --color-line-strong: var(--line-strong);
+  --color-selection: var(--selection);
+  --color-highlight: var(--highlight);
+  --color-pen-graphite: var(--pen-graphite);
+  --color-pen-vermilion: var(--pen-vermilion);
+  --color-pen-cobalt: var(--pen-cobalt);
+  --color-pen-moss: var(--pen-moss);
+  --color-pen-ochre: var(--pen-ochre);
+  --color-pen-plum: var(--pen-plum);
+  --color-sticky-butter: var(--sticky-butter);
+  --color-sticky-blush: var(--sticky-blush);
+  --color-sticky-sage: var(--sticky-sage);
+  --color-sticky-sky: var(--sticky-sky);
+
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+
+  --shadow-float: var(--float-shadow);
+  --shadow-paper: var(--paper-shadow);
+}
+
+/* Paper: warm drafting paper, graphite ink, one red-pencil accent. */
+:root {
+  --radius: 0.625rem;
+
+  --background: #f3f0e8;
+  --foreground: #1c1b19;
+  --card: #fffdf8;
+  --card-foreground: #1c1b19;
+  --popover: #fffdf8;
+  --popover-foreground: #1c1b19;
+  --primary: #c43e18;
+  --primary-foreground: #ffffff;
+  --secondary: #eae5da;
+  --secondary-foreground: #1c1b19;
+  --muted: #ece7dd;
+  --muted-foreground: #6b665e;
+  --accent: #efebe2;
+  --accent-foreground: #1c1b19;
+  --destructive: #b3261e;
+  --border: #e3ddd1;
+  --input: #cec7b8;
+  --ring: #2f5bd3;
+  --chart-1: #c43e18;
+  --chart-2: #2f5bd3;
+  --chart-3: #3f7d4e;
+  --chart-4: #c8911e;
+  --chart-5: #7a3e8f;
+  --sidebar: #f6f2e9;
+  --sidebar-foreground: #1c1b19;
+  --sidebar-primary: #c43e18;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #ece7dc;
+  --sidebar-accent-foreground: #1c1b19;
+  --sidebar-border: #e3ddd1;
+  --sidebar-ring: #2f5bd3;
+
+  --canvas: #f3f0e8;
+  --dot: #d3ccbd;
+  --surface: #fffdf8;
+  --surface-2: #f6f2e9;
+  --ink-2: #46423b;
+  --line-strong: #cec7b8;
+  --selection: #2f5bd3;
+  --highlight: rgb(232 183 48 / 0.42);
+  --pen-graphite: #1c1b19;
+  --pen-vermilion: #c43e18;
+  --pen-cobalt: #2f5bd3;
+  --pen-moss: #3f7d4e;
+  --pen-ochre: #c8911e;
+  --pen-plum: #7a3e8f;
+  --sticky-butter: #f5e6a3;
+  --sticky-blush: #f3cdc1;
+  --sticky-sage: #cfe2c8;
+  --sticky-sky: #cadcf1;
+  --float-shadow: 0 1px 0 rgb(28 27 25 / 0.05), 0 8px 24px -10px rgb(28 27 25 / 0.22);
+  --paper-shadow: 0 1px 2px rgb(28 27 25 / 0.08), 0 12px 28px -14px rgb(28 27 25 / 0.28);
+}
+
+/* Chalk: chalkboard dark, chalk-white ink, brighter red pencil. */
+.dark {
+  --background: #141517;
+  --foreground: #ece7dc;
+  --card: #1d1e21;
+  --card-foreground: #ece7dc;
+  --popover: #1d1e21;
+  --popover-foreground: #ece7dc;
+  --primary: #ff7447;
+  --primary-foreground: #1a0d07;
+  --secondary: #25262a;
+  --secondary-foreground: #ece7dc;
+  --muted: #25262a;
+  --muted-foreground: #9a948a;
+  --accent: #2a2b30;
+  --accent-foreground: #ece7dc;
+  --destructive: #f97066;
+  --border: #2f3135;
+  --input: #3d3f44;
+  --ring: #7c9bff;
+  --chart-1: #ff7447;
+  --chart-2: #7c9bff;
+  --chart-3: #6fbf82;
+  --chart-4: #e2b24a;
+  --chart-5: #b98acb;
+  --sidebar: #1a1b1e;
+  --sidebar-foreground: #ece7dc;
+  --sidebar-primary: #ff7447;
+  --sidebar-primary-foreground: #1a0d07;
+  --sidebar-accent: #25262a;
+  --sidebar-accent-foreground: #ece7dc;
+  --sidebar-border: #2f3135;
+  --sidebar-ring: #7c9bff;
+
+  --canvas: #141517;
+  --dot: #2a2c30;
+  --surface: #1d1e21;
+  --surface-2: #25262a;
+  --ink-2: #c9c3b6;
+  --line-strong: #3d3f44;
+  --selection: #7c9bff;
+  --highlight: rgb(232 183 48 / 0.5);
+  --pen-graphite: #ece7dc;
+  --pen-vermilion: #ff7447;
+  --pen-cobalt: #7c9bff;
+  --pen-moss: #6fbf82;
+  --pen-ochre: #e2b24a;
+  --pen-plum: #b98acb;
+  --sticky-butter: #e6d47f;
+  --sticky-blush: #e4ae9f;
+  --sticky-sage: #b1cda8;
+  --sticky-sky: #a9c4e4;
+  --float-shadow: 0 1px 0 rgb(0 0 0 / 0.3), 0 10px 28px -10px rgb(0 0 0 / 0.6);
+  --paper-shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 14px 30px -12px rgb(0 0 0 / 0.7);
+}
+
+/* The dotted canvas ground used behind boards and empty states. */
+@utility bg-canvas-dots {
+  background-color: var(--canvas);
+  background-image: radial-gradient(var(--dot) 1px, transparent 1.2px);
+  background-size: 24px 24px;
+  background-position: 12px 12px;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    @apply font-sans antialiased;
+    color-scheme: light;
+  }
+  html.dark {
+    color-scheme: dark;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+}

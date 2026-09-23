@@ -1,0 +1,32 @@
+{
+  "$schema": "https://turborepo.com/schema.json",
+  "ui": "stream",
+  "globalDependencies": [".nvmrc"],
+  "globalEnv": ["NODE_ENV"],
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "inputs": ["$TURBO_DEFAULT$", "!**/*.test.ts", "!**/*.test.tsx"],
+      "outputs": [".next/**", "!.next/cache/**", "dist/**"],
+      "env": ["NEXT_PUBLIC_*", "SKIP_ENV_VALIDATION"]
+    },
+    "typecheck": {
+      "dependsOn": ["^build"],
+      "outputs": []
+    },
+    "lint": {
+      "dependsOn": ["^build"],
+      "outputs": []
+    },
+    "test": {
+      "dependsOn": ["^build"],
+      "outputs": [],
+      "env": ["DATABASE_URL", "REDIS_URL", "GCS_*"]
+    },
+    "dev": {
+      "dependsOn": ["^build"],
+      "cache": false,
+      "persistent": true
+    }
+  }
+}

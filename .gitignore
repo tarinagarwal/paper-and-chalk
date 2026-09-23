@@ -1,0 +1,36 @@
+# dependencies
+node_modules/
+
+# builds
+.next/
+dist/
+out/
+build/
+coverage/
+*.tsbuildinfo
+next-env.d.ts
+
+# turbo
+.turbo/
+
+# env
+.env
+.env.*
+!.env.example
+
+# local service data
+.data/
+
+# logs / os
+*.log
+.DS_Store
+Thumbs.db
+
+# editor
+.vscode/*
+!.vscode/extensions.json
+.idea/
+
+# Markdown stays local: README.md is the only markdown file in the repo
+*.md
+!/README.md

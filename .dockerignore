@@ -1,0 +1,14 @@
+**/node_modules
+**/.next
+**/dist
+**/.turbo
+**/coverage
+**/*.tsbuildinfo
+.git
+.github
+.husky
+.env
+.env.*
+!.env.example
+*.md
+docker-compose.yml

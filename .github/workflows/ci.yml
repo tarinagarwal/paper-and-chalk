@@ -1,0 +1,102 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  TURBO_TELEMETRY_DISABLED: 1
+  NEXT_TELEMETRY_DISABLED: 1
+
+jobs:
+  check:
+    name: Typecheck, lint, test, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: pgvector/pgvector:0.8.1-pg16
+        env:
+          POSTGRES_USER: pc
+          POSTGRES_PASSWORD: pc
+          POSTGRES_DB: paper_chalk
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U pc -d paper_chalk"
+          --health-interval 2s --health-timeout 3s --health-retries 30
+      redis:
+        image: redis:7.2-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 2s --health-timeout 3s --health-retries 30
+
+    env:
+      DATABASE_URL: postgres://pc:pc@localhost:5432/paper_chalk
+      REDIS_URL: redis://localhost:6379
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Restore Turborepo cache
+        uses: actions/cache@v6
+        with:
+          path: .turbo/cache
+          key: turbo-${{ runner.os }}-${{ github.sha }}
+          restore-keys: turbo-${{ runner.os }}-
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Format
+        run: pnpm format:check
+
+      - name: Typecheck
+        run: pnpm turbo run typecheck
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Test
+        run: pnpm turbo run test
+
+      - name: Build
+        run: pnpm turbo run build
+
+  docker:
+    name: Docker image (${{ matrix.app }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        app: [web, sync, workers]
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Build
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: apps/${{ matrix.app }}/Dockerfile
+          push: false
+          tags: paper-chalk-${{ matrix.app }}:ci
+          cache-from: type=gha,scope=${{ matrix.app }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.app }}
