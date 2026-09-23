@@ -131,6 +131,13 @@ describe("elementSchema", () => {
     const withPoints = (points: unknown) =>
       make("stroke", { data: { points, tool: "ballpoint", simulatePressure: true } });
 
+    it("rejects a stroke with no points", () => {
+      const data = { tool: "ballpoint", simulatePressure: true };
+      const result = elementSchema.safeParse(make("stroke", { data }));
+      expect(result.success).toBe(false);
+      expect(result.error?.issues.some((i) => i.path.join(".") === "data.points")).toBe(true);
+    });
+
     it("rejects an empty stroke", () => {
       expect(elementSchema.safeParse(withPoints(new Uint8Array(0))).success).toBe(false);
     });
