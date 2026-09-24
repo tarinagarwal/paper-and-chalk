@@ -7,7 +7,7 @@ const baseURL = `http://localhost:${String(PORT)}`;
 
 /** Throwaway database and outbox, never the development ones. */
 export const E2E_MONGODB_URI =
-  process.env.E2E_MONGODB_URI ?? "mongodb://localhost:27027/paper_chalk_e2e";
+  process.env.E2E_MONGODB_URI ?? "mongodb://localhost:27027/paper_chalk_e2e?directConnection=true";
 export const E2E_OUTBOX_DIR = fileURLToPath(new URL("./.data/e2e-outbox", import.meta.url));
 export const AUTH_STATE = fileURLToPath(new URL("./e2e/.auth/user.json", import.meta.url));
 
@@ -18,6 +18,9 @@ export const AUTH_STATE = fileURLToPath(new URL("./e2e/.auth/user.json", import.
 export default defineConfig({
   testDir: "./e2e",
   fullyParallel: true,
+  // One production server behind every test: more workers than this starve it on a laptop and
+  // make clicks land before hydration. CI's default is two as well.
+  workers: 2,
   forbidOnly: Boolean(process.env.CI),
   retries: process.env.CI ? 2 : 0,
   reporter: process.env.CI ? [["github"], ["list"]] : "list",

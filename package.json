@@ -20,8 +20,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "db:migrate": "pnpm --filter @pc/db run migrate",
-    "db:generate": "pnpm --filter @pc/db run generate",
-    "db:studio": "pnpm --filter @pc/db run studio",
+    "db:seed": "pnpm --filter @pc/db run seed",
     "services:up": "docker compose up -d --wait",
     "services:down": "docker compose down",
     "prepare": "husky"

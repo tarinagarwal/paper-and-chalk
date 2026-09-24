@@ -21,7 +21,7 @@ import {
   type RateLimitRule,
   type RateLimitStore,
 } from "@/lib/rate-limit";
-import { getMongo, getUpstash } from "@/lib/server/clients";
+import { getMongo, getRepositories, getUpstash } from "@/lib/server/clients";
 
 const MAGIC_LINK_TTL_MINUTES = 15;
 
@@ -127,6 +127,18 @@ function createAuth() {
           },
         }
       : {}),
+
+    databaseHooks: {
+      session: {
+        create: {
+          // Every sign-in makes sure the user has a personal workspace: created on the first one,
+          // and back-filled for accounts that predate workspaces. Idempotent and race-safe.
+          async after(session) {
+            await getRepositories().ensurePersonalWorkspace(session.userId);
+          },
+        },
+      },
+    },
 
     // Our Redis-backed limiter below replaces Better Auth's per-instance memory limiter.
     rateLimit: { enabled: false },

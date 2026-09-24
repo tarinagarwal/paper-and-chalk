@@ -2,10 +2,11 @@ import type { Db } from "mongodb";
 
 import { collections } from "../collections";
 import { authIndexes } from "./0001_auth_indexes";
+import { coreCollections } from "./0002_core_collections";
 import type { Migration } from "./types";
 
 /** Every migration, in order. Append new ones; never reorder or edit applied ones. */
-export const migrations: readonly Migration[] = [authIndexes];
+export const migrations: readonly Migration[] = [authIndexes, coreCollections];
 
 interface AppliedMigration {
   _id: string;

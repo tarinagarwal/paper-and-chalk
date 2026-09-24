@@ -1,7 +1,7 @@
 import "server-only";
 
 import { Storage } from "@google-cloud/storage";
-import { createMongo, type MongoConnection } from "@pc/db";
+import { createMongo, createRepositories, type MongoConnection, type Repositories } from "@pc/db";
 import { Redis } from "@upstash/redis";
 
 import { env } from "@/env";
@@ -12,6 +12,7 @@ import { env } from "@/env";
  */
 const cache = globalThis as typeof globalThis & {
   __pcMongo?: MongoConnection;
+  __pcRepositories?: Repositories;
   __pcUpstash?: Redis;
   __pcStorage?: Storage;
 };
@@ -19,6 +20,12 @@ const cache = globalThis as typeof globalThis & {
 export function getMongo(): MongoConnection {
   cache.__pcMongo ??= createMongo(env.MONGODB_URI, { appName: "paper-chalk-web" });
   return cache.__pcMongo;
+}
+
+/** The permission-checked data layer. Route handlers use this, never raw queries. */
+export function getRepositories(): Repositories {
+  cache.__pcRepositories ??= createRepositories(getMongo());
+  return cache.__pcRepositories;
 }
 
 /** Upstash over REST: works from any runtime and needs no connection pool. */

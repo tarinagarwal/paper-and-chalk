@@ -3,3 +3,7 @@ export * from "./element";
 export * from "./page";
 export * from "./jobs";
 export * from "./identity";
+export * from "./access";
+export * from "./order";
+export * from "./search";
+export * from "./records";

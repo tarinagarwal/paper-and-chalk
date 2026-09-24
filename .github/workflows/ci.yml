@@ -22,20 +22,17 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
-    services:
-      mongo:
-        image: mongo:8.0
-        ports: ["27017:27017"]
-        options: >-
-          --health-cmd "mongosh --quiet --eval 'db.runCommand({ping:1}).ok'"
-          --health-interval 3s --health-timeout 5s --health-retries 30
-
     env:
-      MONGODB_TEST_URI: mongodb://localhost:27017/paper_chalk_test
+      # The docker-compose MongoDB: a single-node replica set, so transactions work.
+      MONGODB_TEST_URI: mongodb://localhost:27027/paper_chalk_test?directConnection=true
       NEXT_PUBLIC_SITE_URL: http://localhost:3000
 
     steps:
       - uses: actions/checkout@v7
+
+      # Service containers can't pass --replSet, so start the same MongoDB as local development.
+      - name: Start MongoDB
+        run: docker compose up -d --wait mongo
 
       - uses: pnpm/action-setup@v6
 
@@ -72,18 +69,11 @@ jobs:
     name: End-to-end (Playwright)
     runs-on: ubuntu-latest
     timeout-minutes: 25
-    services:
-      mongo:
-        image: mongo:8.0
-        ports: ["27017:27017"]
-        options: >-
-          --health-cmd "mongosh --quiet --eval 'db.runCommand({ping:1}).ok'"
-          --health-interval 3s --health-timeout 5s --health-retries 30
     env:
       # The Playwright config points the server at the throwaway database, a memory rate limiter
       # and a file outbox. The rest only has to pass startup validation.
-      E2E_MONGODB_URI: mongodb://localhost:27017/paper_chalk_e2e
-      MONGODB_URI: mongodb://localhost:27017/paper_chalk_e2e
+      E2E_MONGODB_URI: mongodb://localhost:27027/paper_chalk_e2e?directConnection=true
+      MONGODB_URI: mongodb://localhost:27027/paper_chalk_e2e?directConnection=true
       BETTER_AUTH_SECRET: ci-only-auth-secret-not-used-anywhere-else-0001
       BETTER_AUTH_URL: http://localhost:3100
       SYNC_JWT_SECRET: ci-only-sync-secret-not-used-anywhere-else-0001
@@ -100,6 +90,10 @@ jobs:
       NEXT_PUBLIC_SITE_URL: http://localhost:3100
     steps:
       - uses: actions/checkout@v7
+
+      # Service containers can't pass --replSet, so start the same MongoDB as local development.
+      - name: Start MongoDB
+        run: docker compose up -d --wait mongo
 
       - uses: pnpm/action-setup@v6
 
