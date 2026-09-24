@@ -57,6 +57,8 @@ export async function chooseName(page: Page, name: string) {
   await dialog.getByLabel("Your name").fill(name);
   await dialog.getByTestId("name-submit").click();
   await expect(dialog).toBeHidden();
+  // The page refreshes with the new name; wait until the library itself has rendered.
+  await expect(page.getByRole("heading", { name: "Home", level: 1 })).toBeVisible();
 }
 
 export const uniqueEmail = (label: string) =>

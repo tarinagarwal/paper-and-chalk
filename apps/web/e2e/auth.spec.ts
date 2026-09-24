@@ -36,10 +36,6 @@ test.describe("magic link", () => {
     await expect(page).toHaveURL(/\/app\?from=e2e$/);
     await chooseName(page, "Flow Tester");
 
-    await page.getByTestId("user-menu").click();
-    await expect(page.getByTestId("user-menu-email")).toHaveText(email);
-    await page.keyboard.press("Escape");
-
     const res = await page.request.get("/api/sync-token");
     expect(res.status()).toBe(200);
     const body = (await res.json()) as { token: string; expiresAt: string };
@@ -49,6 +45,8 @@ test.describe("magic link", () => {
     expect(ttl).toBeLessThanOrEqual(10 * 60_000);
 
     await page.getByTestId("user-menu").click();
+    await expect(page.getByTestId("user-menu-name")).toHaveText("Flow Tester");
+    await expect(page.getByTestId("user-menu-email")).toHaveText(email);
     await page.getByTestId("sign-out").click();
     await expect(page).toHaveURL(/\/$/);
     await page.goto("/app");
@@ -86,6 +84,17 @@ test.describe("signed in", () => {
   test("visiting /sign-in goes straight to the app", async ({ page }) => {
     await page.goto("/sign-in");
     await expect(page).toHaveURL(/\/app$/);
+  });
+
+  test("the user menu closes with Escape and opens again", async ({ page }) => {
+    await page.goto("/app");
+    const trigger = page.getByTestId("user-menu");
+    await trigger.click();
+    await expect(page.getByTestId("sign-out")).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("sign-out")).toBeHidden();
+    await trigger.click();
+    await expect(page.getByTestId("sign-out")).toBeVisible();
   });
 
   test("the user menu shows the account and switches theme", async ({ page }) => {
