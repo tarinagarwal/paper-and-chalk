@@ -16,6 +16,8 @@
   },
   "dependencies": {
     "@hocuspocus/server": "^4.7.0",
+    "@pc/schema": "workspace:*",
+    "@pc/sync-token": "workspace:*",
     "@t3-oss/env-core": "^0.13.11",
     "y-protocols": "^1.0.6",
     "yjs": "^13.6.33",

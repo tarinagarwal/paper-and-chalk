@@ -1,35 +1,19 @@
-# Local services for Paper & Chalk (SPEC.md section 2 stand-ins).
-# Host ports are chosen to avoid clashing with other local Postgres/Redis containers.
+# Local services for Paper & Chalk.
+# Host ports are chosen to avoid clashing with other local containers.
 name: paper-chalk
 
 services:
-  postgres:
-    image: pgvector/pgvector:0.8.1-pg16
-    environment:
-      POSTGRES_USER: pc
-      POSTGRES_PASSWORD: pc
-      POSTGRES_DB: paper_chalk
+  # Throwaway MongoDB for tests and CI. Development uses the Atlas cluster in MONGODB_URI.
+  mongo:
+    image: mongo:8.0
     ports:
-      - "${PC_POSTGRES_PORT:-54320}:5432"
+      - "${PC_MONGO_PORT:-27027}:27017"
     volumes:
-      - postgres-data:/var/lib/postgresql/data
+      - mongo-data:/data/db
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U pc -d paper_chalk"]
-      interval: 2s
-      timeout: 3s
-      retries: 30
-
-  redis:
-    image: redis:7.2-alpine
-    command: ["redis-server", "--appendonly", "yes"]
-    ports:
-      - "${PC_REDIS_PORT:-63790}:6379"
-    volumes:
-      - redis-data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 2s
-      timeout: 3s
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 3s
+      timeout: 5s
       retries: 30
 
   gcs:
@@ -53,6 +37,5 @@ services:
       retries: 30
 
 volumes:
-  postgres-data:
-  redis-data:
+  mongo-data:
   gcs-data:

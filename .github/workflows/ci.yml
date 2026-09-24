@@ -23,26 +23,15 @@ jobs:
     timeout-minutes: 20
 
     services:
-      postgres:
-        image: pgvector/pgvector:0.8.1-pg16
-        env:
-          POSTGRES_USER: pc
-          POSTGRES_PASSWORD: pc
-          POSTGRES_DB: paper_chalk
-        ports: ["5432:5432"]
+      mongo:
+        image: mongo:8.0
+        ports: ["27017:27017"]
         options: >-
-          --health-cmd "pg_isready -U pc -d paper_chalk"
-          --health-interval 2s --health-timeout 3s --health-retries 30
-      redis:
-        image: redis:7.2-alpine
-        ports: ["6379:6379"]
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 2s --health-timeout 3s --health-retries 30
+          --health-cmd "mongosh --quiet --eval 'db.runCommand({ping:1}).ok'"
+          --health-interval 3s --health-timeout 5s --health-retries 30
 
     env:
-      DATABASE_URL: postgres://pc:pc@localhost:5432/paper_chalk
-      REDIS_URL: redis://localhost:6379
+      MONGODB_TEST_URI: mongodb://localhost:27017/paper_chalk_test
       NEXT_PUBLIC_SITE_URL: http://localhost:3000
 
     steps:
@@ -83,10 +72,25 @@ jobs:
     name: End-to-end (Playwright)
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    services:
+      mongo:
+        image: mongo:8.0
+        ports: ["27017:27017"]
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.runCommand({ping:1}).ok'"
+          --health-interval 3s --health-timeout 5s --health-retries 30
     env:
-      # The web server validates these at startup; the pages under test never connect to them.
-      DATABASE_URL: postgres://pc:pc@localhost:5432/paper_chalk
-      REDIS_URL: redis://localhost:6379
+      # The Playwright config points the server at the throwaway database, a memory rate limiter
+      # and a file outbox. The rest only has to pass startup validation.
+      E2E_MONGODB_URI: mongodb://localhost:27017/paper_chalk_e2e
+      MONGODB_URI: mongodb://localhost:27017/paper_chalk_e2e
+      BETTER_AUTH_SECRET: ci-only-auth-secret-not-used-anywhere-else-0001
+      BETTER_AUTH_URL: http://localhost:3100
+      SYNC_JWT_SECRET: ci-only-sync-secret-not-used-anywhere-else-0001
+      UPSTASH_REDIS_REST_URL: https://ci.invalid.upstash.io
+      UPSTASH_REDIS_REST_TOKEN: ci-not-used
+      RATE_LIMIT_STORE: memory
+      EMAIL_DELIVERY: outbox
       GCS_PROJECT_ID: paper-chalk-ci
       GCS_BUCKET_ORIGINALS: originals
       GCS_BUCKET_YJS_SNAPSHOTS: yjs-snapshots

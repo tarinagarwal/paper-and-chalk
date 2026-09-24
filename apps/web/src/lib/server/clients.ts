@@ -1,8 +1,8 @@
 import "server-only";
 
 import { Storage } from "@google-cloud/storage";
-import { createDb, type DbConnection } from "@pc/db";
-import { Redis } from "ioredis";
+import { createMongo, type MongoConnection } from "@pc/db";
+import { Redis } from "@upstash/redis";
 
 import { env } from "@/env";
 
@@ -11,23 +11,23 @@ import { env } from "@/env";
  * opening new ones on every edit.
  */
 const cache = globalThis as typeof globalThis & {
-  __pcDb?: DbConnection;
-  __pcRedis?: Redis;
+  __pcMongo?: MongoConnection;
+  __pcUpstash?: Redis;
   __pcStorage?: Storage;
 };
 
-export function getDb(): DbConnection {
-  cache.__pcDb ??= createDb(env.DATABASE_URL, { appName: "paper-chalk-web" });
-  return cache.__pcDb;
+export function getMongo(): MongoConnection {
+  cache.__pcMongo ??= createMongo(env.MONGODB_URI, { appName: "paper-chalk-web" });
+  return cache.__pcMongo;
 }
 
-export function getRedis(): Redis {
-  cache.__pcRedis ??= new Redis(env.REDIS_URL, {
-    lazyConnect: true,
-    connectTimeout: 2_000,
-    maxRetriesPerRequest: 1,
+/** Upstash over REST: works from any runtime and needs no connection pool. */
+export function getUpstash(): Redis {
+  cache.__pcUpstash ??= new Redis({
+    url: env.UPSTASH_REDIS_REST_URL,
+    token: env.UPSTASH_REDIS_REST_TOKEN,
   });
-  return cache.__pcRedis;
+  return cache.__pcUpstash;
 }
 
 export function getStorage(): Storage {

@@ -21,7 +21,7 @@
     "test": {
       "dependsOn": ["^build"],
       "outputs": [],
-      "env": ["DATABASE_URL", "REDIS_URL", "GCS_*"]
+      "env": ["MONGODB_TEST_URI", "GCS_*"]
     },
     "dev": {
       "dependsOn": ["^build"],

@@ -2,17 +2,16 @@ import { pingDb } from "@pc/db";
 import { NextResponse } from "next/server";
 
 import { runHealthChecks } from "@/lib/health";
-import { buckets, getDb, getRedis, getStorage } from "@/lib/server/clients";
+import { buckets, getMongo, getStorage, getUpstash } from "@/lib/server/clients";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
   const report = await runHealthChecks({
-    db: () => pingDb(getDb().sql),
+    db: () => pingDb(getMongo().db),
     redis: async () => {
-      const redis = getRedis();
-      if (redis.status === "wait" || redis.status === "end") await redis.connect();
-      await redis.ping();
+      const reply = await getUpstash().ping();
+      if (reply !== "PONG") throw new Error(`unexpected PING reply: ${reply}`);
     },
     storage: async () => {
       const storage = getStorage();

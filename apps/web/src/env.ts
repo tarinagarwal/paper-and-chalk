@@ -7,11 +7,38 @@ const bucket = z
   .max(63)
   .regex(/^[a-z0-9][a-z0-9._-]*[a-z0-9]$/, "invalid GCS bucket name");
 
+const secret = z.string().min(32, "must be at least 32 characters");
+
 export const env = createEnv({
   server: {
     NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
-    DATABASE_URL: z.url().startsWith("postgres"),
-    REDIS_URL: z.url().startsWith("redis"),
+    /**
+     * Where this build runs. Staging and production enforce real email, Upstash rate limiting
+     * and Google sign-in; local and ci allow the console/outbox/memory stand-ins.
+     */
+    APP_ENV: z.enum(["local", "ci", "staging", "production"]).default("local"),
+
+    MONGODB_URI: z.string().regex(/^mongodb(\+srv)?:\/\//, "must be a mongodb:// URI"),
+
+    UPSTASH_REDIS_REST_URL: z.url(),
+    UPSTASH_REDIS_REST_TOKEN: z.string().min(1),
+    RATE_LIMIT_STORE: z.enum(["upstash", "memory"]).default("upstash"),
+
+    BETTER_AUTH_SECRET: secret,
+    BETTER_AUTH_URL: z.url(),
+    GOOGLE_CLIENT_ID: z.string().min(1).optional(),
+    GOOGLE_CLIENT_SECRET: z.string().min(1).optional(),
+
+    EMAIL_DELIVERY: z.enum(["console", "outbox", "smtp"]).default("console"),
+    EMAIL_OUTBOX_DIR: z.string().default(".data/outbox"),
+    SMTP_HOST: z.string().min(1).optional(),
+    SMTP_PORT: z.coerce.number().int().positive().default(465),
+    SMTP_USER: z.string().min(1).optional(),
+    SMTP_PASSWORD: z.string().min(1).optional(),
+    EMAIL_FROM: z.string().min(3).default("Paper & Chalk <no-reply@localhost>"),
+
+    SYNC_JWT_SECRET: secret,
+
     GCS_PROJECT_ID: z.string().min(1),
     /** Set only for the local emulator; unset in staging/production to use real GCS. */
     GCS_API_ENDPOINT: z.url().optional(),
@@ -28,7 +55,37 @@ export const env = createEnv({
   experimental__runtimeEnv: {
     NEXT_PUBLIC_SITE_URL: process.env.NEXT_PUBLIC_SITE_URL,
   },
+  createFinalSchema: (shape, isServer) =>
+    z.object(shape).superRefine((env, ctx) => {
+      if (!isServer) return;
+      const issue = (path: string, message: string) => {
+        ctx.addIssue({ code: "custom", path: [path], message });
+      };
+      const deployed = env.APP_ENV === "staging" || env.APP_ENV === "production";
+
+      if (env.EMAIL_DELIVERY === "smtp") {
+        for (const key of ["SMTP_HOST", "SMTP_USER", "SMTP_PASSWORD"] as const) {
+          if (!env[key]) issue(key, "required when EMAIL_DELIVERY=smtp");
+        }
+      }
+      if (Boolean(env.GOOGLE_CLIENT_ID) !== Boolean(env.GOOGLE_CLIENT_SECRET)) {
+        issue(
+          "GOOGLE_CLIENT_SECRET",
+          "set both GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET, or neither",
+        );
+      }
+      if (deployed) {
+        if (env.EMAIL_DELIVERY !== "smtp")
+          issue("EMAIL_DELIVERY", `must be smtp in ${env.APP_ENV}`);
+        if (env.RATE_LIMIT_STORE !== "upstash") {
+          issue("RATE_LIMIT_STORE", `must be upstash in ${env.APP_ENV}`);
+        }
+        if (!env.GOOGLE_CLIENT_ID) issue("GOOGLE_CLIENT_ID", `required in ${env.APP_ENV}`);
+      }
+    }),
   emptyStringAsUndefined: true,
   // Docker image builds have no runtime secrets; the container validates at startup instead.
   skipValidation: process.env.SKIP_ENV_VALIDATION === "1",
 });
+
+export const googleSignInEnabled = Boolean(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET);

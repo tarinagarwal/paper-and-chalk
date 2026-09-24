@@ -1,8 +1,12 @@
 import { expect, test, type Page } from "@playwright/test";
 
+import { AUTH_STATE } from "../playwright.config";
+
 const sidebar = (page: Page) => page.locator('[data-slot="sidebar"][data-state]');
 
 test.describe("app shell", () => {
+  test.use({ storageState: AUTH_STATE });
+
   test("desktop shows the full sidebar", async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto("/app");

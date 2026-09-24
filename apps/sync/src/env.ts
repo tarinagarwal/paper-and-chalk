@@ -7,6 +7,8 @@ export const env = createEnv({
     /** Cloud Run sets PORT. Locally SYNC_PORT (or the default) is used. */
     PORT: z.coerce.number().int().positive().optional(),
     SYNC_PORT: z.coerce.number().int().positive().default(1234),
+    /** Verifies the tokens the web app signs. Must match the web app's value. */
+    SYNC_JWT_SECRET: z.string().min(32, "must be at least 32 characters"),
   },
   runtimeEnv: process.env,
   emptyStringAsUndefined: true,
