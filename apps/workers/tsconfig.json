@@ -1,4 +1,4 @@
 {
   "extends": "@pc/config/tsconfig/node.json",
-  "include": ["src", "*.config.ts"]
+  "include": ["src", "*.config.ts", "vitest.global-setup.ts"]
 }

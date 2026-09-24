@@ -11,6 +11,7 @@ if (existsSync(envFile)) process.loadEnvFile(envFile);
 export default defineConfig({
   test: {
     include: ["src/**/*.test.ts"],
+    globalSetup: ["./vitest.global-setup.ts"],
     // Tests share one throwaway database server.
     fileParallelism: false,
     testTimeout: 60_000,

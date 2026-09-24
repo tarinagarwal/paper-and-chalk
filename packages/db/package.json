@@ -6,7 +6,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./migrations": "./src/migrations/index.ts",
-    "./testing": "./src/testing.ts"
+    "./testing": "./src/testing.ts",
+    "./test-server": "./src/test-server.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
@@ -19,6 +20,7 @@
     "@pc/config": "workspace:*",
     "@types/node": "^24.13.6",
     "eslint": "^10.11.0",
+    "mongodb-memory-server-core": "^11.3.0",
     "tsx": "^4.23.15",
     "typescript": "~6.0.3",
     "vitest": "^5.0.1"

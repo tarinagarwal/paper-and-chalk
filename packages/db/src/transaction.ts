@@ -2,7 +2,7 @@ import type { ClientSession, MongoClient } from "mongodb";
 
 /**
  * Runs `fn` in a MongoDB transaction and returns its result. Requires a replica set (Atlas, or
- * the local single-node replica set in docker-compose). Transient errors are retried by the driver.
+ * the single-node replica set tests start). Transient errors are retried by the driver.
  */
 export async function withTransaction<T>(
   client: MongoClient,

@@ -32,7 +32,8 @@ packages/config      Shared tsconfig, ESLint and Prettier config
 
 ## Getting started
 
-Requirements: Node 24 (pinned in `.nvmrc`), pnpm 10, Docker Desktop.
+Requirements: Node 24 (pinned in `.nvmrc`) and pnpm 10. No Docker: development uses the cloud
+services in `.env`, and tests start a throwaway MongoDB of their own (downloaded once).
 
 ```sh
 pnpm install
@@ -41,8 +42,7 @@ pnpm dev
 ```
 
 Fill in `.env` (MongoDB, Upstash, S3, auth and SMTP values; see the comments in `.env.example`).
-`pnpm dev` starts a MongoDB in Docker that only the tests use, applies migrations to your
-database, then runs:
+`pnpm dev` applies migrations to your database, then runs:
 
 - web: http://localhost:3000 (health: `/api/health`)
 - sync: ws://localhost:1234 (health: `/health`)
@@ -52,16 +52,17 @@ database, then runs:
 
 | Command              | What it does                                              |
 | -------------------- | --------------------------------------------------------- |
-| `pnpm dev`           | Local services + every app in watch mode                  |
+| `pnpm dev`           | Migrations + every app in watch mode                      |
 | `pnpm typecheck`     | TypeScript across the workspace                           |
 | `pnpm lint`          | ESLint across the workspace                               |
-| `pnpm test`          | Vitest across the workspace (needs Docker and S3 access)  |
+| `pnpm test`          | Vitest across the workspace (needs S3 access)             |
 | `pnpm build`         | Production builds                                         |
 | `pnpm db:migrate`    | Apply database migrations                                 |
 | `pnpm db:seed`       | Demo data (`--reset` to recreate, `--remove` to delete)   |
 | `pnpm storage:setup` | Create the S3 buckets and apply CORS and lifecycle rules  |
 
-End-to-end tests (Playwright, against a production build; they start the workers too):
+End-to-end tests (Playwright, against a production build; they start a test MongoDB and the
+workers too):
 
 ```sh
 pnpm --filter @pc/web build

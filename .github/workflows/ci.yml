@@ -33,16 +33,10 @@ jobs:
       id-token: write
 
     env:
-      # The docker-compose MongoDB: a single-node replica set, so transactions work.
-      MONGODB_TEST_URI: mongodb://localhost:27027/paper_chalk_test?directConnection=true
       NEXT_PUBLIC_SITE_URL: http://localhost:3000
 
     steps:
       - uses: actions/checkout@v7
-
-      # Service containers can't pass --replSet, so start the same MongoDB as local development.
-      - name: Start MongoDB
-        run: docker compose up -d --wait mongo
 
       # Short-lived AWS credentials through GitHub OIDC: no keys are stored in the repo.
       - name: Sign in to AWS
@@ -66,6 +60,13 @@ jobs:
           restore-keys: turbo-${{ runner.os }}-
 
       - run: pnpm install --frozen-lockfile
+
+      # Tests start their own MongoDB (mongodb-memory-server); keep its binary between runs.
+      - name: Cache the test MongoDB binary
+        uses: actions/cache@v6
+        with:
+          path: node_modules/.cache/mongodb-binaries
+          key: mongodb-8.0.32-${{ runner.os }}
 
       - name: Format
         run: pnpm format:check
@@ -92,8 +93,8 @@ jobs:
     env:
       # The Playwright config points the server at the throwaway database, a memory rate limiter
       # and a file outbox. The rest only has to pass startup validation.
-      E2E_MONGODB_URI: mongodb://localhost:27027/paper_chalk_e2e?directConnection=true
-      MONGODB_URI: mongodb://localhost:27027/paper_chalk_e2e?directConnection=true
+      # Playwright starts a throwaway MongoDB on this port (e2e/test-mongo.ts).
+      MONGODB_URI: mongodb://127.0.0.1:27027/paper_chalk_e2e?directConnection=true
       BETTER_AUTH_SECRET: ci-only-auth-secret-not-used-anywhere-else-0001
       BETTER_AUTH_URL: http://localhost:3100
       SYNC_JWT_SECRET: ci-only-sync-secret-not-used-anywhere-else-0001
@@ -104,10 +105,6 @@ jobs:
       NEXT_PUBLIC_SITE_URL: http://localhost:3100
     steps:
       - uses: actions/checkout@v7
-
-      # Service containers can't pass --replSet, so start the same MongoDB as local development.
-      - name: Start MongoDB
-        run: docker compose up -d --wait mongo
 
       # Short-lived AWS credentials through GitHub OIDC: no keys are stored in the repo.
       - name: Sign in to AWS
@@ -124,6 +121,13 @@ jobs:
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
+
+      # Tests start their own MongoDB (mongodb-memory-server); keep its binary between runs.
+      - name: Cache the test MongoDB binary
+        uses: actions/cache@v6
+        with:
+          path: node_modules/.cache/mongodb-binaries
+          key: mongodb-8.0.32-${{ runner.os }}
 
       - name: Install Chromium
         run: pnpm --filter @pc/web exec playwright install --with-deps chromium

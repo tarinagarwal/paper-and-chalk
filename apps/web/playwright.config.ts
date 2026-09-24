@@ -10,8 +10,10 @@ const WORKERS_BASE = `http://localhost:${String(WORKERS_PORT)}`;
 const E2E_KEY_PREFIX = "test/e2e/";
 
 /** Throwaway database and outbox, never the development ones. */
+const E2E_MONGODB_PORT = 27027;
 export const E2E_MONGODB_URI =
-  process.env.E2E_MONGODB_URI ?? "mongodb://localhost:27027/paper_chalk_e2e?directConnection=true";
+  process.env.E2E_MONGODB_URI ??
+  `mongodb://127.0.0.1:${String(E2E_MONGODB_PORT)}/paper_chalk_e2e?directConnection=true`;
 export const E2E_OUTBOX_DIR = fileURLToPath(new URL("./.data/e2e-outbox", import.meta.url));
 export const AUTH_STATE = fileURLToPath(new URL("./e2e/.auth/user.json", import.meta.url));
 
@@ -42,6 +44,16 @@ export default defineConfig({
     },
   ],
   webServer: [
+    {
+      // A throwaway MongoDB (no Docker), started first so the app and workers can reach it.
+      command: "node --import tsx e2e/test-mongo.ts",
+      port: E2E_MONGODB_PORT,
+      wait: { stdout: /test MongoDB ready/ },
+      reuseExistingServer: !process.env.CI,
+      // The first run downloads the MongoDB binary.
+      timeout: 300_000,
+      env: { E2E_MONGODB_PORT: String(E2E_MONGODB_PORT) },
+    },
     {
       command: `pnpm exec dotenv -e ../../.env -- next start --port ${String(PORT)}`,
       url: baseURL,

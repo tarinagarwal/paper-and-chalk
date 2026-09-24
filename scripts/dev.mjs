@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// `pnpm dev`: make sure local services are up and migrated, then run every app in watch mode.
+// `pnpm dev`: apply migrations to the dev database, then run every app in watch mode.
+// Everything runs against the cloud services in .env (Atlas, Upstash, S3); no Docker needed.
 import { spawn, spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 
@@ -20,15 +21,6 @@ if (!existsSync(".env")) {
   fail("No .env file. Run: cp .env.example .env");
 }
 
-const docker = spawnSync("docker", ["info", "--format", "{{.ServerVersion}}"], {
-  encoding: "utf8",
-  shell: isWindows,
-});
-if (docker.status !== 0) {
-  fail("Docker is not running. Start Docker Desktop and try again.");
-}
-
-run("docker", ["compose", "up", "-d", "--wait"], "Starting local MongoDB (tests)");
 run("pnpm", ["db:migrate"], "Applying database migrations (MONGODB_URI)");
 
 console.info("→ Starting web (3000), sync (1234) and workers (8081)\n");
