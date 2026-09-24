@@ -1,9 +1,9 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 
-import { isJobKind, jobPayloadSchemas, type JobKind } from "@pc/schema";
+import { isJobKind, jobPayloadSchemas, type JobKind, type JobPayload } from "@pc/schema";
 
 import { readTaskMeta } from "./cloud-tasks";
-import { jobHandlers, type JobContext, type JobHandlers } from "./jobs";
+import { jobHandlers, type JobContext, type JobHandlers, type WorkerServices } from "./jobs";
 
 const MAX_BODY_BYTES = 1024 * 1024;
 const JOB_PATH = /^\/jobs\/([A-Za-z0-9_-]+)$/;
@@ -53,7 +53,8 @@ async function runJob<K extends JobKind>(
     throw new HttpError(400, "invalid job payload", parsed.error.issues);
   }
   const handler: JobHandlers[K] = handlers[kind];
-  return handler(parsed.data, ctx);
+  // TypeScript cannot tie the schema lookup to the handler lookup through K; both use `kind`.
+  return handler(parsed.data as JobPayload<K>, ctx);
 }
 
 function log(severity: "INFO" | "ERROR", message: string, fields: Record<string, unknown>) {
@@ -63,18 +64,30 @@ function log(severity: "INFO" | "ERROR", message: string, fields: Record<string,
   else console.info(line);
 }
 
+/** Set by the web app when it records the job, so the worker can record how it went. */
+const JOB_ID_HEADER = "x-pc-job-id";
+
 /**
- * Receives jobs as Cloud Tasks HTTP targets: POST /jobs/:kind with a JSON payload.
- * 2xx acknowledges the task; 5xx makes Cloud Tasks retry it. 4xx means the request itself is
- * wrong; the queue's max-attempts setting bounds how often those are retried.
+ * Receives jobs over HTTP: POST /jobs/:kind with a JSON payload (the web app's dispatcher now, a
+ * queue's HTTP target once deployed). 2xx acknowledges the job; 5xx asks for a retry. 4xx means
+ * the request itself is wrong; a queue's max-attempts setting bounds how often those are retried.
  */
-export function createWorkerServer(handlers: JobHandlers = jobHandlers): Server {
+export function createWorkerServer(options: {
+  services: WorkerServices;
+  handlers?: JobHandlers;
+}): Server {
+  const handlers = options.handlers ?? jobHandlers;
   return createServer((req, res) => {
-    void handle(req, res, handlers);
+    void handle(req, res, handlers, options.services);
   });
 }
 
-async function handle(req: IncomingMessage, res: ServerResponse, handlers: JobHandlers) {
+async function handle(
+  req: IncomingMessage,
+  res: ServerResponse,
+  handlers: JobHandlers,
+  services: WorkerServices,
+) {
   const path = new URL(req.url ?? "/", "http://localhost").pathname;
 
   try {
@@ -91,10 +104,22 @@ async function handle(req: IncomingMessage, res: ServerResponse, handlers: JobHa
 
     const body = await readJson(req);
     const task = readTaskMeta(req.headers);
+    const jobId = req.headers[JOB_ID_HEADER];
+    const record = typeof jobId === "string" && jobId.length > 0 ? jobId : null;
     const startedAt = performance.now();
-    const result = await runJob(kind, body, { task }, handlers);
+    if (record) await services.jobs.start(record);
+    let result: unknown;
+    try {
+      result = await runJob(kind, body, { task, services }, handlers);
+    } catch (error) {
+      if (record)
+        await services.jobs.fail(record, error instanceof Error ? error.message : String(error));
+      throw error;
+    }
+    if (record) await services.jobs.succeed(record, result);
     log("INFO", "job done", {
       kind,
+      job: record,
       task: task.taskName,
       attempt: task.retryCount + 1,
       ms: Math.round(performance.now() - startedAt),

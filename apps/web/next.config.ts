@@ -10,7 +10,7 @@ const nextConfig: NextConfig = {
   // Trace files from the monorepo root so the standalone bundle includes workspace packages.
   outputFileTracingRoot: fileURLToPath(new URL("../../", import.meta.url)),
   // Workspace packages ship TypeScript source.
-  transpilePackages: ["@pc/schema", "@pc/db"],
+  transpilePackages: ["@pc/schema", "@pc/db", "@pc/storage"],
   typedRoutes: true,
   poweredByHeader: false,
   reactStrictMode: true,

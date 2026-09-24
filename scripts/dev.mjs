@@ -28,7 +28,7 @@ if (docker.status !== 0) {
   fail("Docker is not running. Start Docker Desktop and try again.");
 }
 
-run("docker", ["compose", "up", "-d", "--wait"], "Starting local MongoDB (tests) and fake GCS");
+run("docker", ["compose", "up", "-d", "--wait"], "Starting local MongoDB (tests)");
 run("pnpm", ["db:migrate"], "Applying database migrations (MONGODB_URI)");
 
 console.info("→ Starting web (3000), sync (1234) and workers (8081)\n");

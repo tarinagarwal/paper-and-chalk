@@ -18,11 +18,16 @@ export {
 } from "./permissions/can";
 export type { Decision, Denied, DenyReason } from "./permissions/decide";
 export {
+  createFileRepositories,
   createRepositories,
   DEFAULT_NOTEBOOK_PAGE,
   type DocumentWithRole,
+  type FileRepositories,
   type Repositories,
   type ShareLinkView,
+  type UploadInitResult,
+  type VerificationResult,
   type WorkspaceWithRole,
 } from "./repositories";
+export { storageAccount, type StorageAccount } from "./repositories/quota";
 // Migrations live at "@pc/db/migrations" so app bundles never pull them in.

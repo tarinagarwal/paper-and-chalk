@@ -1,40 +1,14 @@
-import { MongoServerError, type Db, type Document, type IndexDescription } from "mongodb";
+import type { Document, IndexDescription } from "mongodb";
 
 import { collections } from "../collections";
+import {
+  ensureCollection,
+  nullableDate,
+  nullableString,
+  requireFields,
+  timestamps as ts,
+} from "./helpers";
 import type { Migration } from "./types";
-
-type BsonType =
-  | "string"
-  | "bool"
-  | "date"
-  | "int"
-  | "long"
-  | "double"
-  | "object"
-  | "array"
-  | "null"
-  | "binData"
-  | "number";
-
-/**
- * A light MongoDB validator: the listed fields must exist with these BSON types. Zod schemas in
- * @pc/schema do the full validation before every write; this is the database-level backstop.
- */
-function requireFields(fields: Record<string, BsonType | BsonType[]>): Document {
-  return {
-    $jsonSchema: {
-      bsonType: "object",
-      required: Object.keys(fields),
-      properties: Object.fromEntries(
-        Object.entries(fields).map(([name, type]) => [name, { bsonType: type }]),
-      ),
-    },
-  };
-}
-
-const ts = { createdAt: "date", updatedAt: "date" } as const;
-const nullableDate: BsonType[] = ["date", "null"];
-const nullableString: BsonType[] = ["string", "null"];
 
 const specs: { name: string; validator: Document; indexes: IndexDescription[] }[] = [
   {
@@ -282,20 +256,6 @@ const specs: { name: string; validator: Document; indexes: IndexDescription[] }[
     ],
   },
 ];
-
-async function ensureCollection(db: Db, name: string, validator: Document): Promise<void> {
-  const options = { validator, validationLevel: "moderate", validationAction: "error" } as const;
-  try {
-    await db.createCollection(name, options);
-  } catch (error) {
-    // 48 = NamespaceExists: apply the validator to the existing collection instead.
-    if (error instanceof MongoServerError && error.code === 48) {
-      await db.command({ collMod: name, ...options });
-    } else {
-      throw error;
-    }
-  }
-}
 
 /** Every collection from SPEC.md section 3, with validators and indexes (step 4). */
 export const coreCollections: Migration = {

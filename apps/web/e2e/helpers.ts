@@ -36,7 +36,8 @@ export async function requestMagicLink(page: Page, email: string, path = "/sign-
   const since = Date.now();
   await page.getByLabel("Email").fill(email);
   await page.getByTestId("magic-link-submit").click();
-  await expect(page).toHaveURL(/\/sign-in\/verify\?/);
+  // Sending takes a moment (real SMTP in dev, a busy machine in the full suite).
+  await expect(page).toHaveURL(/\/sign-in\/verify\?/, { timeout: 15_000 });
   await expect(page.getByTestId("verify-email")).toHaveText(email);
   const message = await waitForEmail(email, since);
   expect(message.subject).toContain("sign-in link");

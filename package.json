@@ -21,6 +21,7 @@
     "format:check": "prettier --check .",
     "db:migrate": "pnpm --filter @pc/db run migrate",
     "db:seed": "pnpm --filter @pc/db run seed",
+    "storage:setup": "pnpm --filter @pc/storage run setup",
     "services:up": "docker compose up -d --wait",
     "services:down": "docker compose down",
     "prepare": "husky"

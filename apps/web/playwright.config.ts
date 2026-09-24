@@ -4,6 +4,10 @@ import { defineConfig, devices } from "@playwright/test";
 
 const PORT = 3100;
 const baseURL = `http://localhost:${String(PORT)}`;
+/** Not the dev stack's 8081, so e2e can run while `pnpm dev` is up. */
+const WORKERS_PORT = 8182;
+const WORKERS_BASE = `http://localhost:${String(WORKERS_PORT)}`;
+const E2E_KEY_PREFIX = "test/e2e/";
 
 /** Throwaway database and outbox, never the development ones. */
 export const E2E_MONGODB_URI =
@@ -37,18 +41,35 @@ export default defineConfig({
       dependencies: ["setup"],
     },
   ],
-  webServer: {
-    command: `pnpm exec dotenv -e ../../.env -- next start --port ${String(PORT)}`,
-    url: baseURL,
-    reuseExistingServer: !process.env.CI,
-    timeout: 120_000,
-    env: {
-      APP_ENV: "ci",
-      MONGODB_URI: E2E_MONGODB_URI,
-      BETTER_AUTH_URL: baseURL,
-      RATE_LIMIT_STORE: "memory",
-      EMAIL_DELIVERY: "outbox",
-      EMAIL_OUTBOX_DIR: E2E_OUTBOX_DIR,
+  webServer: [
+    {
+      command: `pnpm exec dotenv -e ../../.env -- next start --port ${String(PORT)}`,
+      url: baseURL,
+      reuseExistingServer: !process.env.CI,
+      timeout: 120_000,
+      env: {
+        APP_ENV: "ci",
+        MONGODB_URI: E2E_MONGODB_URI,
+        BETTER_AUTH_URL: baseURL,
+        RATE_LIMIT_STORE: "memory",
+        EMAIL_DELIVERY: "outbox",
+        EMAIL_OUTBOX_DIR: E2E_OUTBOX_DIR,
+        // Real dev buckets, but only under test/, which expires after a day.
+        S3_KEY_PREFIX: E2E_KEY_PREFIX,
+        WORKERS_URL: WORKERS_BASE,
+      },
     },
-  },
+    {
+      // The workers verify uploads, so an upload can reach "ready" end to end.
+      command: "node --env-file-if-exists=../../.env --import tsx src/index.ts",
+      cwd: fileURLToPath(new URL("../workers", import.meta.url)),
+      url: `${WORKERS_BASE}/health`,
+      reuseExistingServer: !process.env.CI,
+      timeout: 60_000,
+      env: {
+        MONGODB_URI: E2E_MONGODB_URI,
+        WORKERS_PORT: String(WORKERS_PORT),
+      },
+    },
+  ],
 });

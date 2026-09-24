@@ -1,8 +1,9 @@
 import { pingDb } from "@pc/db";
+import { BUCKETS } from "@pc/storage";
 import { NextResponse } from "next/server";
 
 import { runHealthChecks } from "@/lib/health";
-import { buckets, getMongo, getStorage, getUpstash } from "@/lib/server/clients";
+import { getMongo, getStorage, getUpstash } from "@/lib/server/clients";
 
 export const dynamic = "force-dynamic";
 
@@ -16,12 +17,9 @@ export async function GET() {
     storage: async () => {
       const storage = getStorage();
       const checks = await Promise.all(
-        Object.values(buckets).map(async (name) => {
-          const [exists] = await storage.bucket(name).exists();
-          return { name, exists };
-        }),
+        BUCKETS.map(async (bucket) => ({ bucket, exists: await storage.bucketExists(bucket) })),
       );
-      const missing = checks.filter((c) => !c.exists).map((c) => c.name);
+      const missing = checks.filter((c) => !c.exists).map((c) => storage.config.buckets[c.bucket]);
       if (missing.length > 0) throw new Error(`missing buckets: ${missing.join(", ")}`);
     },
   });

@@ -1,7 +1,14 @@
 import "server-only";
 
-import { Storage } from "@google-cloud/storage";
-import { createMongo, createRepositories, type MongoConnection, type Repositories } from "@pc/db";
+import {
+  createFileRepositories,
+  createMongo,
+  createRepositories,
+  type FileRepositories,
+  type MongoConnection,
+  type Repositories,
+} from "@pc/db";
+import { createStorage, storageConfigFromEnv, type Storage } from "@pc/storage";
 import { Redis } from "@upstash/redis";
 
 import { env } from "@/env";
@@ -13,6 +20,7 @@ import { env } from "@/env";
 const cache = globalThis as typeof globalThis & {
   __pcMongo?: MongoConnection;
   __pcRepositories?: Repositories;
+  __pcFiles?: FileRepositories;
   __pcUpstash?: Redis;
   __pcStorage?: Storage;
 };
@@ -37,21 +45,14 @@ export function getUpstash(): Redis {
   return cache.__pcUpstash;
 }
 
+/** S3 (SPEC.md section 2 buckets, on AWS). */
 export function getStorage(): Storage {
-  cache.__pcStorage ??= new Storage({
-    projectId: env.GCS_PROJECT_ID,
-    ...(env.GCS_API_ENDPOINT
-      ? { apiEndpoint: env.GCS_API_ENDPOINT, useAuthWithCustomEndpoint: false }
-      : {}),
-  });
+  cache.__pcStorage ??= createStorage(storageConfigFromEnv(env));
   return cache.__pcStorage;
 }
 
-/** The five buckets from SPEC.md section 2. */
-export const buckets = {
-  originals: env.GCS_BUCKET_ORIGINALS,
-  yjsSnapshots: env.GCS_BUCKET_YJS_SNAPSHOTS,
-  assets: env.GCS_BUCKET_ASSETS,
-  exports: env.GCS_BUCKET_EXPORTS,
-  thumbnails: env.GCS_BUCKET_THUMBNAILS,
-} as const;
+/** Uploads and asset reads: the permission-checked repositories that also talk to S3. */
+export function getFiles(): FileRepositories {
+  cache.__pcFiles ??= createFileRepositories(getMongo(), getStorage());
+  return cache.__pcFiles;
+}

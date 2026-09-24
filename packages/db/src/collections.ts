@@ -10,6 +10,7 @@ import type {
   PageRecord,
   ShareLinkRecord,
   TagRecord,
+  UploadRecord,
   VersionRecord,
   WorkspaceMemberRecord,
   WorkspaceRecord,
@@ -43,6 +44,7 @@ export const collections = {
   jobs: "jobs",
   activity: "activity",
   yjsUpdates: "yjsUpdates",
+  uploads: "uploads",
 } as const;
 
 export type CollectionName = (typeof collections)[keyof typeof collections];
@@ -81,6 +83,7 @@ export function typedCollections(db: Db) {
     jobs: c<JobRecord>(collections.jobs),
     activity: c<ActivityRecord>(collections.activity),
     yjsUpdates: c<YjsUpdateRecord>(collections.yjsUpdates),
+    uploads: c<UploadRecord>(collections.uploads),
   };
 }
 

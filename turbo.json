@@ -21,7 +21,8 @@
     "test": {
       "dependsOn": ["^build"],
       "outputs": [],
-      "env": ["MONGODB_TEST_URI", "GCS_*"]
+      "env": ["MONGODB_TEST_URI", "S3_*"],
+      "passThroughEnv": ["AWS_*"]
     },
     "dev": {
       "dependsOn": ["^build"],

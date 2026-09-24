@@ -27,7 +27,11 @@ describe("migrations", () => {
     expect(await runMigrations(conn.db)).toEqual(migrations.map((m) => m.id));
     expect(await runMigrations(conn.db)).toEqual([]);
     const log = await conn.db.collection(collections.migrations).find().toArray();
-    expect(log.map((m) => m._id)).toEqual(["0001_auth_indexes", "0002_core_collections"]);
+    expect(log.map((m) => m._id)).toEqual([
+      "0001_auth_indexes",
+      "0002_core_collections",
+      "0003_uploads",
+    ]);
   });
 
   it("creates the auth indexes", async () => {
@@ -96,6 +100,38 @@ describe("migrations", () => {
     );
     await workspaces.insertOne({ ...base, _id: "t1", personal: false });
     await workspaces.insertOne({ ...base, _id: "t2", personal: false });
+  });
+
+  it("keeps one live copy of a file per workspace, but lets a rejected one be replaced", async () => {
+    expect(await names(collections.assets)).toContain("workspace_sha256_live");
+    expect(await names(collections.assets)).not.toContain("workspace_sha256");
+    expect(await names(collections.uploads)).toEqual(
+      expect.arrayContaining(["resume", "expiresAt_ttl"]),
+    );
+    const assets = conn.db.collection<{ _id: string } & Record<string, unknown>>(
+      collections.assets,
+    );
+    const asset = (id: string, status: string) => ({
+      _id: id,
+      workspaceId: "w1",
+      documentId: null,
+      kind: "image",
+      bucket: "assets",
+      key: `ws/w1/${id}`,
+      fileName: "a.png",
+      bytes: 10,
+      mime: "image/png",
+      sha256: "f".repeat(64),
+      sha256Verified: true,
+      status,
+      createdBy: "u1",
+      chargedTo: "u1",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    await assets.insertOne(asset("a1", "rejected"));
+    await assets.insertOne(asset("a2", "ready"));
+    await expect(assets.insertOne(asset("a3", "verifying"))).rejects.toThrow(/duplicate key/);
   });
 
   it("re-running the core migration updates existing collections", async () => {

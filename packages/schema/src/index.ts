@@ -7,3 +7,4 @@ export * from "./access";
 export * from "./order";
 export * from "./search";
 export * from "./records";
+export * from "./uploads";

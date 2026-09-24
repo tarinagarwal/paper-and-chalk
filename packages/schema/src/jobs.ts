@@ -1,6 +1,6 @@
 /**
  * Background job contracts shared by the enqueuer (apps/web) and apps/workers.
- * Workers receive jobs as Cloud Tasks HTTP targets: POST /jobs/:kind with a JSON body.
+ * Workers receive jobs over HTTP: POST /jobs/:kind with a JSON body.
  */
 import { z } from "zod";
 
@@ -9,9 +9,16 @@ export const pingJobSchema = z.strictObject({
 });
 export type PingJob = z.infer<typeof pingJobSchema>;
 
+/** Checks an uploaded file's real type (and hash, for multipart uploads) before it is usable. */
+export const verifyAssetJobSchema = z.strictObject({
+  assetId: z.uuid(),
+});
+export type VerifyAssetJob = z.infer<typeof verifyAssetJobSchema>;
+
 /** Every job kind and its payload schema. Add new kinds here. */
 export const jobPayloadSchemas = {
   ping: pingJobSchema,
+  verifyAsset: verifyAssetJobSchema,
 } as const;
 
 export type JobKind = keyof typeof jobPayloadSchemas;

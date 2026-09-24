@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 
+import { UploadTray } from "@/components/shell/upload-tray";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -51,7 +52,9 @@ export function AppShell({
           </div>
         </SidebarInset>
       </SidebarProvider>
-      <Toaster position="bottom-right" />
+      <UploadTray />
+      {/* Bottom centre so toasts never cover the upload tray (bottom right). */}
+      <Toaster position="bottom-center" />
     </TooltipProvider>
   );
 }

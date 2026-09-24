@@ -9,6 +9,13 @@ import { roleSchema, shareLinkRoleSchema } from "./access";
 import { pageBackgroundSchema, pageRotationSchema, pageSpecSchema } from "./page";
 import { fractionalIndexSchema, hexColorSchema, positivePoints } from "./primitives";
 import { EMBEDDING_DIMENSIONS } from "./search";
+import {
+  ASSET_BUCKETS,
+  ASSET_KINDS,
+  ASSET_STATUSES,
+  sha256HexSchema,
+  uploadMimeSchema,
+} from "./uploads";
 
 const recordId = z.uuid();
 const userId = z.string().min(1).max(64);
@@ -218,22 +225,56 @@ export const versionRecordSchema = z.strictObject({
 });
 export type VersionRecord = z.infer<typeof versionRecordSchema>;
 
-export const ASSET_KINDS = ["image", "audio", "pdf", "video", "attachment"] as const;
-
 export const assetRecordSchema = z.strictObject({
   _id: recordId,
   workspaceId: recordId,
   documentId: recordId.nullable(),
   kind: z.enum(ASSET_KINDS),
-  gcsPath: z.string().min(1).max(1024),
-  bytes: z.int().nonnegative(),
-  mime: z.string().min(1).max(200),
+  /** Which bucket role holds it, and the full object key (one object per upload). */
+  bucket: z.enum(ASSET_BUCKETS),
+  key: z.string().min(1).max(1024),
+  fileName: z.string().min(1).max(255),
+  bytes: z.int().positive(),
+  mime: uploadMimeSchema,
   /** Dedupe key across the workspace. */
-  sha256: z.string().regex(/^[0-9a-f]{64}$/),
+  sha256: sha256HexSchema,
+  /** True once the stored bytes are known to hash to `sha256` (S3 checks single-PUT uploads). */
+  sha256Verified: z.boolean(),
+  /** A worker checks the file's real type before it is `ready`; mismatches are `rejected`. */
+  status: z.enum(ASSET_STATUSES),
+  rejectedReason: z.string().max(200).nullable(),
   createdBy: userId,
+  /** Whose storage quota the bytes count against (the workspace owner at upload time). */
+  chargedTo: userId,
   ...timestamps,
 });
 export type AssetRecord = z.infer<typeof assetRecordSchema>;
+
+export const UPLOAD_STATUSES = ["pending", "completed", "aborted"] as const;
+
+/** An upload in progress. Becomes the asset with the same id when it completes. */
+export const uploadRecordSchema = z.strictObject({
+  _id: recordId,
+  workspaceId: recordId,
+  documentId: recordId.nullable(),
+  createdBy: userId,
+  chargedTo: userId,
+  fileName: z.string().min(1).max(255),
+  mime: uploadMimeSchema,
+  bytes: z.int().positive(),
+  sha256: sha256HexSchema,
+  bucket: z.enum(ASSET_BUCKETS),
+  key: z.string().min(1).max(1024),
+  /** S3 multipart upload id; null for single-PUT uploads. */
+  multipartUploadId: z.string().min(1).nullable(),
+  partSize: z.int().positive().nullable(),
+  partCount: z.int().positive().nullable(),
+  status: z.enum(UPLOAD_STATUSES),
+  /** A TTL index removes the record after this; S3 aborts unfinished parts after a day. */
+  expiresAt: z.date(),
+  ...timestamps,
+});
+export type UploadRecord = z.infer<typeof uploadRecordSchema>;
 
 export const audioSessionRecordSchema = z.strictObject({
   _id: recordId,

@@ -15,12 +15,22 @@ permissions:
 env:
   TURBO_TELEMETRY_DISABLED: 1
   NEXT_TELEMETRY_DISABLED: 1
+  # The real dev buckets. The CI role can only touch keys under test/, which expire after a day.
+  S3_REGION: ap-south-1
+  S3_BUCKET_ORIGINALS: paper-chalk-dev-originals
+  S3_BUCKET_YJS_SNAPSHOTS: paper-chalk-dev-yjs-snapshots
+  S3_BUCKET_ASSETS: paper-chalk-dev-assets
+  S3_BUCKET_EXPORTS: paper-chalk-dev-exports
+  S3_BUCKET_THUMBNAILS: paper-chalk-dev-thumbnails
 
 jobs:
   check:
     name: Typecheck, lint, test, build
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write
 
     env:
       # The docker-compose MongoDB: a single-node replica set, so transactions work.
@@ -33,6 +43,13 @@ jobs:
       # Service containers can't pass --replSet, so start the same MongoDB as local development.
       - name: Start MongoDB
         run: docker compose up -d --wait mongo
+
+      # Short-lived AWS credentials through GitHub OIDC: no keys are stored in the repo.
+      - name: Sign in to AWS
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.AWS_CI_ROLE_ARN }}
+          aws-region: ap-south-1
 
       - uses: pnpm/action-setup@v6
 
@@ -69,6 +86,9 @@ jobs:
     name: End-to-end (Playwright)
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    permissions:
+      contents: read
+      id-token: write
     env:
       # The Playwright config points the server at the throwaway database, a memory rate limiter
       # and a file outbox. The rest only has to pass startup validation.
@@ -81,12 +101,6 @@ jobs:
       UPSTASH_REDIS_REST_TOKEN: ci-not-used
       RATE_LIMIT_STORE: memory
       EMAIL_DELIVERY: outbox
-      GCS_PROJECT_ID: paper-chalk-ci
-      GCS_BUCKET_ORIGINALS: originals
-      GCS_BUCKET_YJS_SNAPSHOTS: yjs-snapshots
-      GCS_BUCKET_ASSETS: assets
-      GCS_BUCKET_EXPORTS: exports
-      GCS_BUCKET_THUMBNAILS: thumbnails
       NEXT_PUBLIC_SITE_URL: http://localhost:3100
     steps:
       - uses: actions/checkout@v7
@@ -94,6 +108,13 @@ jobs:
       # Service containers can't pass --replSet, so start the same MongoDB as local development.
       - name: Start MongoDB
         run: docker compose up -d --wait mongo
+
+      # Short-lived AWS credentials through GitHub OIDC: no keys are stored in the repo.
+      - name: Sign in to AWS
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.AWS_CI_ROLE_ARN }}
+          aws-region: ap-south-1
 
       - uses: pnpm/action-setup@v6
 

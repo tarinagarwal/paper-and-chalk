@@ -12,28 +12,14 @@ import { cache as perRequest } from "react";
 import { env, googleSignInEnabled } from "@/env";
 import { magicLinkEmail } from "@/lib/email/templates";
 import { sendEmail } from "@/lib/email/send";
-import {
-  clientIp,
-  consume,
-  MemoryStore,
-  rateLimits,
-  UpstashStore,
-  type RateLimitRule,
-  type RateLimitStore,
-} from "@/lib/rate-limit";
-import { getMongo, getRepositories, getUpstash } from "@/lib/server/clients";
+import { clientIp, rateLimits, type RateLimitRule } from "@/lib/rate-limit";
+import { getMongo, getRepositories } from "@/lib/server/clients";
+import { hitLimit } from "@/lib/server/limits";
 
 const MAGIC_LINK_TTL_MINUTES = 15;
 
-let limiterStore: RateLimitStore | undefined;
-function limiter(): RateLimitStore {
-  limiterStore ??=
-    env.RATE_LIMIT_STORE === "memory" ? new MemoryStore() : new UpstashStore(getUpstash());
-  return limiterStore;
-}
-
 async function enforce(rule: RateLimitRule, subject: string): Promise<void> {
-  const result = await consume(limiter(), rule, subject);
+  const result = await hitLimit(rule, subject);
   if (!result.allowed) {
     throw new APIError(
       "TOO_MANY_REQUESTS",

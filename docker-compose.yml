@@ -1,4 +1,5 @@
-# Local services for Paper & Chalk.
+# Local services for Paper & Chalk. Only the throwaway test database runs here: development,
+# tests and CI use the real cloud services (Atlas, Upstash, the S3 dev buckets).
 # Host ports are chosen to avoid clashing with other local containers.
 name: paper-chalk
 
@@ -25,26 +26,5 @@ services:
       timeout: 10s
       retries: 30
 
-  gcs:
-    image: fsouza/fake-gcs-server:1.52
-    # Each directory under /data becomes a bucket at startup; objects persist in /storage.
-    entrypoint:
-      - /bin/sh
-      - -c
-      - >-
-        mkdir -p /data/originals /data/yjs-snapshots /data/assets /data/exports /data/thumbnails &&
-        exec /bin/fake-gcs-server -data /data -backend filesystem -filesystem-root /storage
-        -scheme http -port 4443 -external-url http://localhost:${PC_GCS_PORT:-4443}
-    ports:
-      - "${PC_GCS_PORT:-4443}:4443"
-    volumes:
-      - gcs-data:/storage
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:4443/storage/v1/b"]
-      interval: 2s
-      timeout: 3s
-      retries: 30
-
 volumes:
   mongo-data:
-  gcs-data:

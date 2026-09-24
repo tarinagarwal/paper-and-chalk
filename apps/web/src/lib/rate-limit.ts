@@ -28,11 +28,13 @@ export interface RateLimitResult {
   retryAfterSeconds: number;
 }
 
-/** Limits from step 3. Windows are 15 minutes. */
+/** Sign-in limits from step 3, upload limits from step 5. Windows are 15 minutes. */
 export const rateLimits = {
   magicLinkPerEmail: { name: "magic-link:email", limit: 5, windowSeconds: 15 * 60 },
   magicLinkPerIp: { name: "magic-link:ip", limit: 20, windowSeconds: 15 * 60 },
   signInPerIp: { name: "sign-in:ip", limit: 30, windowSeconds: 15 * 60 },
+  /** Starting uploads (resumes and duplicates count too). */
+  uploadInitPerUser: { name: "upload-init:user", limit: 120, windowSeconds: 15 * 60 },
 } as const satisfies Record<string, RateLimitRule>;
 
 /** Keys never contain raw emails or IPs. */
