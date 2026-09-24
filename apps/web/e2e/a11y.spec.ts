@@ -2,6 +2,7 @@ import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
 
 import { AUTH_STATE } from "../playwright.config";
+import { signIn, uniqueEmail } from "./helpers";
 
 const publicPages = [
   "/",
@@ -47,3 +48,10 @@ for (const scheme of ["light", "dark"] as const) {
     });
   });
 }
+
+test("the name dialog has no serious accessibility issues", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await signIn(page, uniqueEmail("a11y-name"));
+  await expect(page.getByTestId("name-dialog")).toBeVisible();
+  expect(await seriousViolations(page)).toEqual([]);
+});

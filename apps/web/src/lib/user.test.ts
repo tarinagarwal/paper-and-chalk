@@ -1,6 +1,16 @@
 import { describe, expect, it } from "vitest";
 
-import { displayName, initials } from "./user";
+import { displayName, initials, needsDisplayName } from "./user";
+
+describe("needsDisplayName", () => {
+  it("is true for missing or blank names only", () => {
+    expect(needsDisplayName({ name: "" })).toBe(true);
+    expect(needsDisplayName({ name: "   " })).toBe(true);
+    expect(needsDisplayName({ name: null })).toBe(true);
+    expect(needsDisplayName({})).toBe(true);
+    expect(needsDisplayName({ name: "Maya" })).toBe(false);
+  });
+});
 
 describe("displayName", () => {
   it("prefers the name, then the email local part", () => {

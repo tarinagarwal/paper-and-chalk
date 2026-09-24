@@ -3,6 +3,11 @@ interface NamedUser {
   email: string;
 }
 
+/** True until the user has chosen a display name (magic-link accounts start without one). */
+export function needsDisplayName(user: { name?: string | null }): boolean {
+  return !user.name?.trim();
+}
+
 /** Magic-link users start without a name; fall back to the part of the email before the @. */
 export function displayName(user: NamedUser): string {
   const name = user.name?.trim();

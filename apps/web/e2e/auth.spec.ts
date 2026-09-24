@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 import { AUTH_STATE } from "../playwright.config";
-import { requestMagicLink, signIn, uniqueEmail } from "./helpers";
+import { chooseName, requestMagicLink, signIn, uniqueEmail } from "./helpers";
 
 test.describe("signed out", () => {
   test("/app redirects to sign-in and keeps the requested URL", async ({ page }) => {
@@ -34,6 +34,7 @@ test.describe("magic link", () => {
     await expect(page).toHaveURL(/callbackUrl=/);
     await signIn(page, email, page.url().replace(/^https?:\/\/[^/]+/, ""));
     await expect(page).toHaveURL(/\/app\?from=e2e$/);
+    await chooseName(page, "Flow Tester");
 
     await page.getByTestId("user-menu").click();
     await expect(page.getByTestId("user-menu-email")).toHaveText(email);

@@ -5,8 +5,11 @@ import { redirect } from "next/navigation";
 import { AppShell } from "@/components/shell/app-shell";
 import { AppSidebar } from "@/components/shell/app-sidebar";
 import { AppTopbar } from "@/components/shell/app-topbar";
+import { NameDialog } from "@/components/shell/name-dialog";
 import { getSession } from "@/lib/auth";
-import { displayName } from "@/lib/user";
+import { displayName, needsDisplayName } from "@/lib/user";
+
+import AppLoading from "./loading";
 
 // Per-user pages: never prerendered.
 export const dynamic = "force-dynamic";
@@ -24,6 +27,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const cookieStore = await cookies();
   const defaultOpen = cookieStore.get("sidebar_state")?.value !== "false";
   const { user } = session;
+  // Until the user picks a name, the app content is not rendered at all: only a placeholder
+  // behind a dialog that cannot be dismissed.
+  const mustChooseName = needsDisplayName(user);
 
   return (
     <AppShell
@@ -41,7 +47,16 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         />
       }
     >
-      {children}
+      {mustChooseName ? (
+        <>
+          <div aria-hidden className="pointer-events-none flex flex-1 flex-col opacity-60">
+            <AppLoading />
+          </div>
+          <NameDialog userId={user.id} email={user.email} />
+        </>
+      ) : (
+        children
+      )}
     </AppShell>
   );
 }

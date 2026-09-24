@@ -1,5 +1,6 @@
 import "server-only";
 
+import { displayNameSchema } from "@pc/schema";
 import { betterAuth } from "better-auth";
 import { mongodbAdapter } from "better-auth/adapters/mongodb";
 import { APIError, createAuthMiddleware } from "better-auth/api";
@@ -43,6 +44,40 @@ async function enforce(rule: RateLimitRule, subject: string): Promise<void> {
       },
       { "Retry-After": String(result.retryAfterSeconds) },
     );
+  }
+}
+
+/**
+ * Display names are validated and normalised on the server, whatever the client sends. Returns a
+ * rewritten request body for Better Auth, or nothing when the request does not touch the name.
+ */
+function normaliseDisplayName(rawBody: unknown) {
+  const body = rawBody as Record<string, unknown> | undefined;
+  if (!body || !("name" in body)) return undefined;
+  const parsed = displayNameSchema.safeParse(body.name);
+  if (!parsed.success) {
+    throw new APIError("BAD_REQUEST", {
+      code: "INVALID_NAME",
+      message: parsed.error.issues[0]?.message ?? "Enter a valid name",
+    });
+  }
+  return { context: { body: { ...body, name: parsed.data } } };
+}
+
+/** Per-IP and per-email limits on starting a sign-in (magic link or Google). */
+async function limitSignIn(path: string, headers: Headers | undefined, rawBody: unknown) {
+  const isMagicLink = path === "/sign-in/magic-link";
+  const isSocial = path === "/sign-in/social";
+  if (!isMagicLink && !isSocial) return;
+
+  const ip = clientIp(headers ?? new Headers());
+  await enforce(rateLimits.signInPerIp, ip);
+  if (isMagicLink) {
+    await enforce(rateLimits.magicLinkPerIp, ip);
+    const body = rawBody as { email?: unknown } | undefined;
+    if (typeof body?.email === "string") {
+      await enforce(rateLimits.magicLinkPerEmail, body.email);
+    }
   }
 }
 
@@ -98,19 +133,9 @@ function createAuth() {
 
     hooks: {
       before: createAuthMiddleware(async (ctx) => {
-        const isMagicLink = ctx.path === "/sign-in/magic-link";
-        const isSocial = ctx.path === "/sign-in/social";
-        if (!isMagicLink && !isSocial) return;
-
-        const ip = clientIp(ctx.headers ?? new Headers());
-        await enforce(rateLimits.signInPerIp, ip);
-        if (isMagicLink) {
-          await enforce(rateLimits.magicLinkPerIp, ip);
-          const body = ctx.body as { email?: unknown } | undefined;
-          if (typeof body?.email === "string") {
-            await enforce(rateLimits.magicLinkPerEmail, body.email);
-          }
-        }
+        if (ctx.path === "/update-user") return normaliseDisplayName(ctx.body);
+        await limitSignIn(ctx.path, ctx.headers, ctx.body);
+        return undefined;
       }),
     },
 

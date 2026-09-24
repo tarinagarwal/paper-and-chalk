@@ -50,5 +50,14 @@ export async function signIn(page: Page, email: string, path = "/sign-in") {
   await page.goto(link);
 }
 
+/** Fills the "What should we call you?" dialog shown to new users. */
+export async function chooseName(page: Page, name: string) {
+  const dialog = page.getByTestId("name-dialog");
+  await expect(dialog).toBeVisible();
+  await dialog.getByLabel("Your name").fill(name);
+  await dialog.getByTestId("name-submit").click();
+  await expect(dialog).toBeHidden();
+}
+
 export const uniqueEmail = (label: string) =>
   `${label}-${String(Date.now())}-${String(Math.floor(Math.random() * 1e6))}@paperchalk.test`;

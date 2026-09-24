@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { PRESENCE_COLORS, presenceColor, syncIdentitySchema } from "./identity";
+import { displayNameSchema, PRESENCE_COLORS, presenceColor, syncIdentitySchema } from "./identity";
 
 /** WCAG relative luminance and contrast ratio. */
 function luminance(hex: string): number {
@@ -30,6 +30,30 @@ describe("presenceColor", () => {
 
   it.each(PRESENCE_COLORS)("%s keeps white text at 4.5:1 or better", (color) => {
     expect(contrastWithWhite(color)).toBeGreaterThanOrEqual(4.5);
+  });
+});
+
+describe("displayNameSchema", () => {
+  it("trims and collapses whitespace", () => {
+    expect(displayNameSchema.parse("  Maya   Rao ")).toBe("Maya Rao");
+  });
+
+  it("accepts names in any script, and digits", () => {
+    for (const name of ["Maya", "मीरा", "李雷", "Zoë O'Neil", "R2"]) {
+      expect(displayNameSchema.safeParse(name).success, name).toBe(true);
+    }
+  });
+
+  it.each([
+    ["", "Enter a name"],
+    ["    ", "Enter a name"],
+    ["---", "Use at least one letter or number"],
+    ["a".repeat(51), "Keep it under 50 characters"],
+    ["Maya\u0000", "Remove special characters"],
+  ])("rejects %j", (value, message) => {
+    const result = displayNameSchema.safeParse(value);
+    expect(result.success).toBe(false);
+    expect(result.error?.issues[0]?.message).toBe(message);
   });
 });
 

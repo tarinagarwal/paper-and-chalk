@@ -4,7 +4,7 @@ import { NextResponse } from "next/server";
 
 import { env } from "@/env";
 import { getAuth } from "@/lib/auth";
-import { displayName } from "@/lib/user";
+import { displayName, needsDisplayName } from "@/lib/user";
 
 export const dynamic = "force-dynamic";
 
@@ -22,6 +22,12 @@ export async function GET(request: Request) {
   }
 
   const { user } = session;
+  if (needsDisplayName(user)) {
+    return NextResponse.json(
+      { error: "profile_incomplete", message: "Choose a display name first." },
+      { status: 403, headers: { "Cache-Control": "no-store" } },
+    );
+  }
   const { token, expiresAt } = await signSyncToken(
     {
       userId: user.id,

@@ -41,6 +41,25 @@ export function presenceColor(userId: string): PresenceColor {
   return PRESENCE_COLORS[index] ?? PRESENCE_COLORS[0];
 }
 
+export const DISPLAY_NAME_MAX_LENGTH = 50;
+
+/**
+ * The name collaborators see on cursors, comments and the account menu. Trimmed, inner whitespace
+ * collapsed, 1–50 characters, at least one letter or digit, no control characters.
+ */
+export const displayNameSchema = z
+  .string()
+  .transform((value) => value.trim().replace(/\s+/g, " "))
+  .pipe(
+    z
+      .string()
+      .min(1, "Enter a name")
+      .max(DISPLAY_NAME_MAX_LENGTH, `Keep it under ${String(DISPLAY_NAME_MAX_LENGTH)} characters`)
+      // eslint-disable-next-line no-control-regex -- rejects control characters
+      .regex(/^[^\u0000-\u001f\u007f]*$/, "Remove special characters")
+      .regex(/[\p{L}\p{N}]/u, "Use at least one letter or number"),
+  );
+
 /** Who a collaborator is, as carried in a sync token. */
 export const syncIdentitySchema = z.strictObject({
   userId: z.string().min(1).max(128),
