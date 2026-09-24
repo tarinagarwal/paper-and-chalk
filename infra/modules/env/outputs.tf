@@ -30,3 +30,12 @@ output "secret_ids" {
 output "mongodb_uri_parameter" {
   value = local.mongodb_param
 }
+
+output "dns_records" {
+  description = "Records to add at the registrar for the custom domains (empty without domains)."
+  value = flatten([
+    for m in concat(google_cloud_run_domain_mapping.web, google_cloud_run_domain_mapping.sync) : [
+      for r in m.status[0].resource_records : "${m.name} ${r.type} ${r.rrdata}"
+    ]
+  ])
+}

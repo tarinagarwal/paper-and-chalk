@@ -1,8 +1,7 @@
 import { randomUUID } from "node:crypto";
 
-import { TEST_KEY_PREFIX } from "./buckets";
 import { createStorage, type Storage } from "./client";
-import { storageConfigFromEnv } from "./config";
+import { storageConfigFromEnv, TEST_KEY_PREFIX } from "./config";
 
 /**
  * A storage client for tests: the dev buckets from the environment, but every key under

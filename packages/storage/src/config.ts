@@ -7,6 +7,12 @@ import { awsCredentialsFromEnv } from "./credentials";
 export const BUCKETS = ["originals", "yjsSnapshots", "assets", "exports", "thumbnails"] as const;
 export type Bucket = (typeof BUCKETS)[number];
 
+/**
+ * Tests, CI and e2e write only under this prefix; the buckets' lifecycle rule (Terraform,
+ * infra/modules/s3-buckets) deletes anything under it after a day.
+ */
+export const TEST_KEY_PREFIX = "test/";
+
 export interface StorageConfig {
   region: string;
   /** Real S3 bucket name for each role, e.g. `paper-chalk-dev-originals`. */

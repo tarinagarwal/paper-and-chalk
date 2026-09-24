@@ -2,6 +2,7 @@ export {
   BUCKETS,
   storageConfigFromEnv,
   storageEnv,
+  TEST_KEY_PREFIX,
   type Bucket,
   type StorageConfig,
 } from "./config";
@@ -14,6 +15,5 @@ export {
   type Storage,
   type UploadedPart,
 } from "./client";
-export { configureBuckets, corsRules, lifecycleRules, TEST_KEY_PREFIX } from "./buckets";
 export { matchesDeclaredType, SNIFF_BYTES } from "./file-types";
 export { awsCredentialsFromEnv, googleWebIdentityCredentials } from "./credentials";

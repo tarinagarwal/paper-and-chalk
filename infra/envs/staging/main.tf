@@ -45,7 +45,7 @@ module "env" {
   gcp_project_id   = "paper-chalk-staging"
   services_enabled = var.services_enabled
   # The first workers image the deploy workflow pushed (see README, New environment).
-  workers_image_tag    = ""
+  workers_image_tag    = "0c727eec6c1d3324b1f542358cc80a9f66b7dff1"
   google_oauth_enabled = var.google_oauth_enabled
 
   # Staging scales to zero; production keeps a warm sync instance.
@@ -74,4 +74,8 @@ output "secret_ids" {
 
 output "mongodb_uri_parameter" {
   value = module.env.mongodb_uri_parameter
+}
+
+output "dns_records" {
+  value = module.env.dns_records
 }
