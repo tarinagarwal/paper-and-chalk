@@ -23,6 +23,9 @@ RUN pnpm turbo run build --filter=@pc/web
 
 FROM node:${NODE_VERSION}-alpine AS runtime
 WORKDIR /app
+# The git SHA of this build, reported by /api/health and on every log line.
+ARG RELEASE=dev
+ENV RELEASE=${RELEASE}
 ENV NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1 \
     PORT=8080 \

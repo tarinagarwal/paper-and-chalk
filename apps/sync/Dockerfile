@@ -21,6 +21,9 @@ RUN pnpm turbo run build --filter=@pc/sync
 RUN pnpm --filter @pc/sync deploy --prod --legacy /out
 
 FROM node:${NODE_VERSION}-alpine AS runtime
+# The git SHA of this build, reported by /health and on every log line.
+ARG RELEASE=dev
+ENV RELEASE=${RELEASE}
 WORKDIR /app
 ENV NODE_ENV=production PORT=8080
 COPY --from=build --chown=node:node /out ./

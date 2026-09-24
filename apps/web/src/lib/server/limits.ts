@@ -15,7 +15,10 @@ let store: RateLimitStore | undefined;
 
 /** The process-wide limiter store: Upstash (shared by every instance) or memory in tests/CI. */
 function limiter(): RateLimitStore {
-  store ??= env.RATE_LIMIT_STORE === "memory" ? new MemoryStore() : new UpstashStore(getUpstash());
+  store ??=
+    env.RATE_LIMIT_STORE === "memory"
+      ? new MemoryStore()
+      : new UpstashStore(getUpstash(), `${env.APP_ENV}:`);
   return store;
 }
 

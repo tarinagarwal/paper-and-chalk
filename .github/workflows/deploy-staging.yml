@@ -1,0 +1,168 @@
+name: Deploy staging
+
+# Every push to main that passes CI goes to staging: images, migrations, workers, services,
+# then a smoke test. No stored cloud keys: GitHub OIDC signs in to GCP (Workload Identity
+# Federation) and AWS (IAM role), both limited to this repository's `staging` environment.
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  RELEASE: ${{ github.event.workflow_run.head_sha || github.sha }}
+  TURBO_TELEMETRY_DISABLED: 1
+  NEXT_TELEMETRY_DISABLED: 1
+
+jobs:
+  images:
+    name: Image (${{ matrix.app }})
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    environment: staging
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - app: web
+            runner: ubuntu-latest
+            platform: linux/amd64
+          - app: sync
+            runner: ubuntu-latest
+            platform: linux/amd64
+          # Lambda runs on Graviton: build natively on GitHub's ARM runner.
+          - app: workers
+            runner: ubuntu-24.04-arm
+            platform: linux/arm64
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.RELEASE }}
+
+      - name: Sign in to Google Cloud
+        if: matrix.app != 'workers'
+        id: gcp
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOYER_SA }}
+          token_format: access_token
+
+      - name: Log in to Artifact Registry
+        if: matrix.app != 'workers'
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ vars.GCP_REGION }}-docker.pkg.dev
+          username: oauth2accesstoken
+          password: ${{ steps.gcp.outputs.access_token }}
+
+      - name: Sign in to AWS
+        if: matrix.app == 'workers'
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Log in to ECR
+        if: matrix.app == 'workers'
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Build and push
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: apps/${{ matrix.app }}/Dockerfile
+          platforms: ${{ matrix.platform }}
+          push: true
+          # Lambda needs a plain single-platform image manifest.
+          provenance: false
+          tags: ${{ matrix.app == 'workers' && format('{0}:{1}', vars.WORKERS_ECR_REPOSITORY, env.RELEASE) || format('{0}/{1}:{2}', vars.GCP_IMAGE_REPOSITORY, matrix.app, env.RELEASE) }}
+          build-args: |
+            RELEASE=${{ env.RELEASE }}
+            NEXT_PUBLIC_SITE_URL=${{ vars.WEB_URL }}
+          cache-from: type=gha,scope=deploy-${{ matrix.app }}
+          cache-to: type=gha,mode=max,scope=deploy-${{ matrix.app }}
+
+  deploy:
+    name: Migrate, deploy, smoke test
+    needs: images
+    environment: staging
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.RELEASE }}
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Sign in to Google Cloud
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOYER_SA }}
+
+      - uses: google-github-actions/setup-gcloud@v3
+
+      - name: Sign in to AWS
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      # Schema first: new code may need the new collections and indexes.
+      - name: Run database migrations
+        run: |
+          uri="$(gcloud secrets versions access latest --secret mongodb-uri --project '${{ vars.GCP_PROJECT_ID }}')"
+          echo "::add-mask::$uri"
+          MONGODB_URI="$uri" pnpm db:migrate
+
+      - name: Deploy workers (Lambda)
+        run: |
+          fn='${{ vars.WORKERS_FUNCTION }}'
+          if aws lambda get-function --function-name "$fn" >/dev/null 2>&1; then
+            aws lambda update-function-code --function-name "$fn" \
+              --image-uri '${{ vars.WORKERS_ECR_REPOSITORY }}:${{ env.RELEASE }}' >/dev/null
+            aws lambda wait function-updated-v2 --function-name "$fn"
+            echo "workers now run ${{ env.RELEASE }}"
+          else
+            echo "::warning::The workers function does not exist yet. Create it with Terraform (workers_image_tag = ${{ env.RELEASE }}); see README, New environment."
+          fi
+
+      - name: Deploy sync and web (Cloud Run)
+        run: |
+          for app in sync web; do
+            gcloud run deploy "$app" --quiet \
+              --project '${{ vars.GCP_PROJECT_ID }}' --region '${{ vars.GCP_REGION }}' \
+              --image '${{ vars.GCP_IMAGE_REPOSITORY }}/'"$app"':${{ env.RELEASE }}'
+          done
+
+      - name: Smoke test
+        run: |
+          secret="$(gcloud secrets versions access latest --secret sync-jwt-secret --project '${{ vars.GCP_PROJECT_ID }}')"
+          echo "::add-mask::$secret"
+          SYNC_JWT_SECRET="$secret" pnpm --filter @pc/sync smoke
+        env:
+          WEB_URL: ${{ vars.WEB_URL }}
+          SYNC_URL: ${{ vars.SYNC_URL }}
+          EXPECTED_RELEASE: ${{ env.RELEASE }}

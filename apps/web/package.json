@@ -13,6 +13,7 @@
     "e2e": "playwright test"
   },
   "dependencies": {
+    "@aws-sdk/client-sqs": "3.1139.0",
     "@pc/db": "workspace:*",
     "@pc/schema": "workspace:*",
     "@pc/storage": "workspace:*",

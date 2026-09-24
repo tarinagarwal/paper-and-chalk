@@ -36,8 +36,13 @@ export const env = createEnv({
 
     ...storageEnv,
 
-    /** Where background jobs are sent (apps/workers). */
+    /** Local dev: background jobs go to the workers over HTTP. */
     WORKERS_URL: z.url().default("http://localhost:8081"),
+    /** Deployed: background jobs go to this SQS queue (the workers run on AWS Lambda). */
+    JOBS_QUEUE_URL: z.url().optional(),
+
+    /** The git SHA this build came from (baked into the image); shown by /api/health. */
+    RELEASE: z.string().min(1).default("dev"),
   },
   client: {
     /** Public origin of the site, used for canonical URLs, sitemap and Open Graph. */
@@ -71,7 +76,11 @@ export const env = createEnv({
         if (env.RATE_LIMIT_STORE !== "upstash") {
           issue("RATE_LIMIT_STORE", `must be upstash in ${env.APP_ENV}`);
         }
-        if (!env.GOOGLE_CLIENT_ID) issue("GOOGLE_CLIENT_ID", `required in ${env.APP_ENV}`);
+        if (!env.JOBS_QUEUE_URL) issue("JOBS_QUEUE_URL", `required in ${env.APP_ENV}`);
+      }
+      // Staging may run before its Google OAuth client exists; production may not.
+      if (env.APP_ENV === "production") {
+        if (!env.GOOGLE_CLIENT_ID) issue("GOOGLE_CLIENT_ID", "required in production");
       }
     }),
   emptyStringAsUndefined: true,

@@ -40,3 +40,10 @@ Thumbs.db
 # Markdown stays local: README.md is the only markdown file in the repo
 *.md
 !/README.md
+
+# terraform (state lives in remote backends; never commit local state or plans)
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log

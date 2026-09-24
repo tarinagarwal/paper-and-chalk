@@ -1,7 +1,8 @@
 import { defineConfig } from "tsup";
 
 export default defineConfig({
-  entry: ["src/index.ts"],
+  // index: the HTTP server (local dev). lambda: the SQS handler (deployed).
+  entry: ["src/index.ts", "src/lambda.ts"],
   format: ["esm"],
   platform: "node",
   target: "node24",

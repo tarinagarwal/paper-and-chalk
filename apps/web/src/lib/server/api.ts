@@ -7,6 +7,7 @@ import { ZodError, type z } from "zod";
 import { getAuth } from "@/lib/auth";
 import type { RateLimitRule } from "@/lib/rate-limit";
 import { hitLimit } from "@/lib/server/limits";
+import { log } from "@/lib/server/log";
 import { needsDisplayName } from "@/lib/user";
 
 /** An error a route answers with directly. */
@@ -58,13 +59,9 @@ export function errorResponse(error: unknown): NextResponse {
       400,
     );
   }
-  console.error(
-    JSON.stringify({
-      severity: "ERROR",
-      message: "api route failed",
-      error: error instanceof Error ? error.message : String(error),
-    }),
-  );
+  log("ERROR", "api route failed", {
+    error: error instanceof Error ? error.message : String(error),
+  });
   return json({ error: "internal", message: "Something went wrong. Try again." }, 500);
 }
 

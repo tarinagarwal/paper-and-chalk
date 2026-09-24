@@ -90,13 +90,18 @@ export interface UpstashLike {
 
 /** Shared across every instance: INCR, set the expiry only on the first hit, read the TTL. */
 export class UpstashStore implements RateLimitStore {
-  constructor(private readonly redis: UpstashLike) {}
+  /** `prefix` keeps environments that share one Redis (dev, staging) from sharing counters. */
+  constructor(
+    private readonly redis: UpstashLike,
+    private readonly prefix = "",
+  ) {}
 
   async hit(key: string, windowSeconds: number): Promise<HitResult> {
     const pipeline = this.redis.pipeline();
-    pipeline.incr(key);
-    pipeline.expire(key, windowSeconds, "NX");
-    pipeline.ttl(key);
+    const fullKey = `${this.prefix}${key}`;
+    pipeline.incr(fullKey);
+    pipeline.expire(fullKey, windowSeconds, "NX");
+    pipeline.ttl(fullKey);
     const [count, , ttl] = await pipeline.exec();
     return {
       count: Number(count),

@@ -78,7 +78,7 @@ describe("workers server", () => {
   it("answers GET /health", async () => {
     const res = await fetch(`${base}/health`);
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ ok: true, service: "workers" });
+    expect(await res.json()).toMatchObject({ ok: true, service: "workers", release: "dev" });
   });
 
   it("runs the ping job and reads Cloud Tasks headers", async () => {

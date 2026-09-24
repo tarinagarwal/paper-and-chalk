@@ -2,6 +2,7 @@ import { pingDb } from "@pc/db";
 import { BUCKETS } from "@pc/storage";
 import { NextResponse } from "next/server";
 
+import { env } from "@/env";
 import { runHealthChecks } from "@/lib/health";
 import { getMongo, getStorage, getUpstash } from "@/lib/server/clients";
 
@@ -24,8 +25,11 @@ export async function GET() {
     },
   });
 
-  return NextResponse.json(report, {
-    status: report.ok ? 200 : 503,
-    headers: { "Cache-Control": "no-store" },
-  });
+  return NextResponse.json(
+    { ...report, release: env.RELEASE },
+    {
+      status: report.ok ? 200 : 503,
+      headers: { "Cache-Control": "no-store" },
+    },
+  );
 }

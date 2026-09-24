@@ -1,6 +1,6 @@
 /**
  * Background job contracts shared by the enqueuer (apps/web) and apps/workers.
- * Workers receive jobs over HTTP: POST /jobs/:kind with a JSON body.
+ * Workers receive jobs from a queue (SQS) when deployed, or over HTTP locally: POST /jobs/:kind.
  */
 import { z } from "zod";
 
@@ -29,3 +29,14 @@ export const jobKindSchema = z.enum(Object.keys(jobPayloadSchemas) as [JobKind, 
 export function isJobKind(value: string): value is JobKind {
   return Object.hasOwn(jobPayloadSchemas, value);
 }
+
+/**
+ * A job on a queue (SQS in deployed environments): the job record's id, its kind and payload.
+ * The payload is checked against its kind's schema by the worker.
+ */
+export const jobMessageSchema = z.strictObject({
+  jobId: z.uuid(),
+  kind: jobKindSchema,
+  payload: z.unknown(),
+});
+export type JobMessage = z.infer<typeof jobMessageSchema>;

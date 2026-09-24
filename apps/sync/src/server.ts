@@ -28,7 +28,12 @@ function sendJson(response: ServerResponse, status: number, body: unknown): void
 }
 
 function log(severity: "INFO" | "WARNING", message: string, fields: Record<string, unknown>) {
-  const line = JSON.stringify({ severity, message, ...fields });
+  const line = JSON.stringify({
+    severity,
+    message,
+    release: process.env.RELEASE ?? "dev",
+    ...fields,
+  });
   if (severity === "WARNING") console.warn(line);
   else console.info(line);
 }
@@ -67,6 +72,7 @@ export function createSyncServer({
         sendJson(response, 200, {
           ok: true,
           service: "sync",
+          release: process.env.RELEASE ?? "dev",
           uptimeSeconds: Math.round((Date.now() - startedAt) / 1000),
         });
       } else {

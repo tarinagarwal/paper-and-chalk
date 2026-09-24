@@ -1,8 +1,11 @@
 # syntax=docker/dockerfile:1.7
-# Build from the repo root: docker build -f apps/workers/Dockerfile .
-ARG NODE_VERSION=24.21.0
+# Workers as an AWS Lambda container image (jobs arrive from SQS). Build from the repo root:
+#   docker build -f apps/workers/Dockerfile --platform linux/arm64 --build-arg RELEASE=<sha> .
+# Every stage uses the Lambda base image so native modules (@node-rs/argon2) are built for its
+# C library (glibc on Amazon Linux), not Alpine's.
+ARG LAMBDA_BASE=public.ecr.aws/lambda/nodejs:24
 
-FROM node:${NODE_VERSION}-alpine AS base
+FROM ${LAMBDA_BASE} AS base
 RUN corepack enable
 ENV PNPM_HOME=/pnpm PATH=/pnpm:$PATH
 WORKDIR /repo
@@ -20,10 +23,8 @@ RUN pnpm turbo run build --filter=@pc/workers
 # Isolated production install: dist/ plus runtime dependencies only.
 RUN pnpm --filter @pc/workers deploy --prod --legacy /out
 
-FROM node:${NODE_VERSION}-alpine AS runtime
-WORKDIR /app
-ENV NODE_ENV=production PORT=8080
-COPY --from=build --chown=node:node /out ./
-USER node
-EXPOSE 8080
-CMD ["node", "dist/index.js"]
+FROM ${LAMBDA_BASE} AS runtime
+ARG RELEASE=dev
+ENV NODE_ENV=production RELEASE=${RELEASE}
+COPY --from=build /out/ ${LAMBDA_TASK_ROOT}/
+CMD ["dist/lambda.handler"]

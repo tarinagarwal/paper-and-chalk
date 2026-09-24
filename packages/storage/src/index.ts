@@ -16,3 +16,4 @@ export {
 } from "./client";
 export { configureBuckets, corsRules, lifecycleRules, TEST_KEY_PREFIX } from "./buckets";
 export { matchesDeclaredType, SNIFF_BYTES } from "./file-types";
+export { awsCredentialsFromEnv, googleWebIdentityCredentials } from "./credentials";

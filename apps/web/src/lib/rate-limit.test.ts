@@ -89,6 +89,12 @@ describe("UpstashStore", () => {
     expect(calls.every((c) => c.endsWith("900 NX"))).toBe(true);
   });
 
+  it("keeps environments apart with a key prefix", async () => {
+    const { redis, calls } = fakeRedis();
+    await new UpstashStore(redis, "staging:").hit("rl:k", 900);
+    expect(calls[0]).toMatch(/^expire staging:rl:k/);
+  });
+
   it("never sends raw subjects as keys", async () => {
     const { redis, calls } = fakeRedis();
     await consume(new UpstashStore(redis), rule, "secret@example.com");

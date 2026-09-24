@@ -1,45 +1,72 @@
 import "server-only";
 
-import type { JobKind, JobPayload } from "@pc/schema";
+import { SendMessageCommand, SQSClient } from "@aws-sdk/client-sqs";
+import type { JobKind, JobMessage, JobPayload } from "@pc/schema";
+import { awsCredentialsFromEnv } from "@pc/storage";
 import { after } from "next/server";
 
 import { env } from "@/env";
 import { getRepositories } from "@/lib/server/clients";
+import { log } from "@/lib/server/log";
 
-/** Long jobs (hashing a 1 GB video) finish well within this. */
+/** Long local jobs (hashing a 1 GB video) finish well within this. */
 const DISPATCH_TIMEOUT_MS = 15 * 60 * 1000;
 
-function log(severity: "INFO" | "ERROR", message: string, fields: Record<string, unknown>) {
-  const line = JSON.stringify({ severity, message, ...fields });
-  if (severity === "ERROR") console.error(line);
-  else console.info(line);
+const cache = globalThis as typeof globalThis & { __pcSqs?: SQSClient };
+
+function sqs(): SQSClient {
+  cache.__pcSqs ??= new SQSClient({
+    region: env.S3_REGION,
+    credentials: awsCredentialsFromEnv(env),
+  });
+  return cache.__pcSqs;
 }
 
-/**
- * Records a job and sends it to the workers once the response has gone out. For now the
- * dispatch is a direct HTTP call; a queue takes its place when the workers are deployed. A job
- * whose dispatch fails stays `queued` in the jobs collection, where it can be found and re-sent.
- */
-export async function enqueueJob<K extends JobKind>(kind: K, payload: JobPayload<K>) {
-  const job = await getRepositories().jobs.create(kind, payload);
+/** Local dev: straight to the workers over HTTP, after the response (the call waits for the job). */
+function dispatchOverHttp(message: JobMessage): void {
   after(async () => {
     try {
-      const response = await fetch(new URL(`/jobs/${kind}`, env.WORKERS_URL), {
+      const response = await fetch(new URL(`/jobs/${message.kind}`, env.WORKERS_URL), {
         method: "POST",
-        headers: { "Content-Type": "application/json", "X-PC-Job-Id": job._id },
-        body: JSON.stringify(payload),
+        headers: { "Content-Type": "application/json", "X-PC-Job-Id": message.jobId },
+        body: JSON.stringify(message.payload),
         signal: AbortSignal.timeout(DISPATCH_TIMEOUT_MS),
       });
       if (!response.ok) {
-        log("ERROR", "job dispatch failed", { kind, job: job._id, status: response.status });
+        log("ERROR", "job dispatch failed", {
+          kind: message.kind,
+          job: message.jobId,
+          status: response.status,
+        });
       }
     } catch (error) {
       log("ERROR", "job dispatch failed", {
-        kind,
-        job: job._id,
+        kind: message.kind,
+        job: message.jobId,
         error: error instanceof Error ? error.message : String(error),
       });
     }
   });
+}
+
+/**
+ * Records a job and hands it to the workers. Deployed: onto the SQS queue before the response is
+ * sent (Cloud Run throttles CPU once a response is out, so nothing runs "after"); the queue then
+ * retries failures and parks repeated ones in its dead-letter queue. Locally: HTTP to the workers.
+ * A job whose local dispatch fails stays `queued` in the jobs collection.
+ */
+export async function enqueueJob<K extends JobKind>(kind: K, payload: JobPayload<K>) {
+  const job = await getRepositories().jobs.create(kind, payload);
+  const message: JobMessage = { jobId: job._id, kind, payload };
+  if (env.JOBS_QUEUE_URL) {
+    await sqs().send(
+      new SendMessageCommand({
+        QueueUrl: env.JOBS_QUEUE_URL,
+        MessageBody: JSON.stringify(message),
+      }),
+    );
+  } else {
+    dispatchOverHttp(message);
+  }
   return job;
 }

@@ -1,4 +1,7 @@
+import type { AwsCredentialIdentity, AwsCredentialIdentityProvider } from "@aws-sdk/types";
 import { z } from "zod";
+
+import { awsCredentialsFromEnv } from "./credentials";
 
 /** The five buckets from SPEC.md section 2, by role. Real names come from the environment. */
 export const BUCKETS = ["originals", "yjsSnapshots", "assets", "exports", "thumbnails"] as const;
@@ -9,10 +12,10 @@ export interface StorageConfig {
   /** Real S3 bucket name for each role, e.g. `paper-chalk-dev-originals`. */
   buckets: Record<Bucket, string>;
   /**
-   * Static keys (the app's IAM user). When unset, the AWS default chain is used: AWS_* variables,
-   * a web-identity role (CI, AWS compute) or the shared CLI profile.
+   * Static keys (the dev IAM user) or a provider (keyless web identity on Google Cloud). When
+   * unset, the AWS default chain is used: AWS_* variables, a role (CI, Lambda) or the CLI profile.
    */
-  credentials?: { accessKeyId: string; secretAccessKey: string } | undefined;
+  credentials?: AwsCredentialIdentity | AwsCredentialIdentityProvider | undefined;
   /**
    * Prepended to every object key. Tests and CI use `test/`, which a lifecycle rule deletes after
    * a day, so they can share the dev buckets without leaving anything behind.
@@ -34,9 +37,12 @@ export const storageEnv = {
   S3_BUCKET_ASSETS: bucketName,
   S3_BUCKET_EXPORTS: bucketName,
   S3_BUCKET_THUMBNAILS: bucketName,
-  /** The app's IAM user. Unset: the AWS default chain (a role in CI and on AWS compute). */
+  /** The dev IAM user. Unset: keyless (below) or the AWS default chain (CI, Lambda). */
   S3_ACCESS_KEY_ID: z.string().min(1).optional(),
   S3_SECRET_ACCESS_KEY: z.string().min(1).optional(),
+  /** On Google Cloud: the AWS role to assume with the service account's ID token. */
+  AWS_WEB_IDENTITY_ROLE_ARN: z.string().startsWith("arn:aws:iam::").optional(),
+  AWS_WEB_IDENTITY_AUDIENCE: z.string().min(1).optional(),
   /** `test/...` in tests, CI and e2e; empty in dev and production. */
   S3_KEY_PREFIX: z
     .string()
@@ -75,7 +81,7 @@ export function storageConfigFromEnv(env: {
       exports: value(required.exports),
       thumbnails: value(required.thumbnails),
     },
-    credentials: accessKeyId && secretAccessKey ? { accessKeyId, secretAccessKey } : undefined,
+    credentials: awsCredentialsFromEnv(env),
     keyPrefix: env.S3_KEY_PREFIX ?? "",
   };
 }
