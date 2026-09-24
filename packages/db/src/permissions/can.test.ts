@@ -106,6 +106,24 @@ describe("can()", () => {
     expect(await effectiveRole(c, as("nobody"), doc._id)).toBeNull();
   });
 
+  it("refuses ink edits from a commenter, with the reason", async () => {
+    await repos.workspaces.addMember(owner, workspace._id, { userId: "cam", role: "commenter" });
+    const cam = as("cam");
+    const layer = {
+      type: "layer",
+      documentId: doc._id,
+      pageId: page._id,
+      layerOwnerOnly: false,
+    } as const;
+    expect(await reason(c, cam, layer, "edit")).toBe("role_too_low");
+    expect(
+      await reason(c, cam, { type: "page", documentId: doc._id, pageId: page._id }, "edit"),
+    ).toBe("role_too_low");
+    expect(await reason(c, cam, { type: "document", documentId: doc._id }, "comment")).toBe(
+      "allowed:commenter",
+    );
+  });
+
   it("keeps owner-only layers to owners", async () => {
     const layer = { type: "layer", documentId: doc._id, pageId: page._id } as const;
     expect(await reason(c, editor, { ...layer, layerOwnerOnly: true }, "edit")).toBe(

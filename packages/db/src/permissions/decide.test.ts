@@ -57,17 +57,27 @@ const SHARE: Record<Role, { allowed: boolean; ifAllowed: boolean }> = {
   viewer: { allowed: false, ifAllowed: false },
 };
 
-/** Every way a signed-in user can hold a role on a document. */
-const SOURCES = {
-  "workspace role": (role: Role) => facts({ workspaceRole: role }),
-  "user grant": (role: Role) => facts({ grants: [{ role, expiresAt: null }] }),
-  "unexpired grant": (role: Role) => facts({ grants: [{ role, expiresAt: future }] }),
-} as const;
+/** Every way a signed-in user can hold a role on a document. Share links stop at editor. */
+const SOURCES: Record<string, { roles: readonly Role[]; make: (role: Role) => DocumentFacts }> = {
+  "workspace role": { roles: ROLES, make: (role) => facts({ workspaceRole: role }) },
+  "user grant": { roles: ROLES, make: (role) => facts({ grants: [{ role, expiresAt: null }] }) },
+  "unexpired grant": {
+    roles: ROLES,
+    make: (role) => facts({ grants: [{ role, expiresAt: future }] }),
+  },
+  "share link": {
+    roles: ["editor", "commenter", "viewer"],
+    make: (role) => facts({ link: link({ role: role === "owner" ? "editor" : role }) }),
+  },
+};
+
+/** Ink and content live on a page, in a layer: the checks the sync server will make. */
+const onPage = (f: DocumentFacts) => ({ ...f, pageLocked: false, layerOwnerOnly: false });
 
 describe("section 4 roles table", () => {
-  for (const [source, make] of Object.entries(SOURCES)) {
+  for (const [source, { roles, make }] of Object.entries(SOURCES)) {
     describe(`role from ${source}`, () => {
-      for (const role of ROLES) {
+      for (const role of roles) {
         for (const action of ["view", "comment", "edit", "managePages", "delete"] as const) {
           const expected = TABLE[role][action];
           it(`${role} ${expected ? "can" : "cannot"} ${action}`, () => {
@@ -76,6 +86,13 @@ describe("section 4 roles table", () => {
             if (!decision.allowed) expect(decision.reason).toBe("role_too_low");
           });
         }
+        it(`${role} ${TABLE[role].edit ? "can" : "cannot"} edit ink on a page and its layers`, () => {
+          const f = onPage(make(role));
+          expect(decidePage(f, "edit").allowed).toBe(TABLE[role].edit);
+          expect(decideLayer(f, "edit").allowed).toBe(TABLE[role].edit);
+          expect(decidePage(f, "managePages").allowed).toBe(TABLE[role].managePages);
+          expect(decidePage(f, "view").allowed).toBe(true);
+        });
         it(`${role} share: ${String(SHARE[role].allowed)} / ${String(SHARE[role].ifAllowed)} when editors may share`, () => {
           expect(decideDocument(make(role), "share").allowed).toBe(SHARE[role].allowed);
           const withSwitch = { ...make(role), editorsCanShare: true };
@@ -89,6 +106,32 @@ describe("section 4 roles table", () => {
     for (const action of DOCUMENT_ACTIONS) {
       expect(() => decideDocument(facts({ workspaceRole: "owner" }), action)).not.toThrow();
     }
+  });
+});
+
+describe("commenter tries to edit ink", () => {
+  const commenters = {
+    "workspace member": facts({ workspaceRole: "commenter" }),
+    "invited by email": facts({ grants: [{ role: "commenter", expiresAt: null }] }),
+    "signed in through a commenter link": facts({ link: link({ role: "commenter" }) }),
+    "guest through a commenter link": facts({ isGuest: true, link: link({ role: "commenter" }) }),
+  };
+
+  for (const [who, f] of Object.entries(commenters)) {
+    it(`is denied for a commenter ${who}`, () => {
+      const denied = { allowed: false, reason: "role_too_low", role: "commenter" };
+      expect(decideDocument(f, "edit")).toMatchObject(denied);
+      expect(decidePage(onPage(f), "edit")).toMatchObject(denied);
+      expect(decideLayer(onPage(f), "edit")).toMatchObject(denied);
+      // They can still see the page and comment on it.
+      expect(decidePage(onPage(f), "view").allowed).toBe(true);
+      expect(decideDocument(f, "comment").allowed).toBe(true);
+    });
+  }
+
+  it("explains why", () => {
+    const decision = decideLayer(onPage(facts({ workspaceRole: "commenter" })), "edit");
+    expect(decision).toMatchObject({ message: "Your role doesn't allow this." });
   });
 });
 
@@ -144,11 +187,11 @@ describe("share links", () => {
     ["revoked", { revoked: true }, "link_revoked"],
     ["expired", { expiresAt: past }, "link_expired"],
     [
-      "password missing",
+      "missing its password",
       { passwordRequired: true, passwordVerified: false },
       "link_password_required",
     ],
-  ] as const)("refuses a %s link", (_label, overrides, reason) => {
+  ] as const)("denies a link that is %s, with the reason", (_label, overrides, reason) => {
     const f = facts({ link: link(overrides) });
     expect(decideDocument(f, "view")).toMatchObject({ allowed: false, reason });
   });
