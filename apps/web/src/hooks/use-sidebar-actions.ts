@@ -15,19 +15,11 @@ import { toast } from "sonner";
 import { useLibraryActions } from "@/hooks/use-library-actions";
 import { libraryApi } from "@/lib/library/api";
 import { libraryKeys } from "@/lib/library/cache";
+import { childrenOf, descendantIds } from "@/lib/library/folders";
 import { countLabel } from "@/lib/library/format";
 
 const messageOf = (error: unknown) =>
   error instanceof Error ? error.message : "Something went wrong. Try again.";
-
-/** Siblings of a folder in tree order. */
-export function childrenOf(folders: readonly FolderView[], parentId: string | null): FolderView[] {
-  return folders
-    .filter((f) => f.parentId === parentId)
-    .sort((a, b) =>
-      a.orderKey < b.orderKey ? -1 : a.orderKey > b.orderKey ? 1 : a.id < b.id ? -1 : 1,
-    );
-}
 
 /**
  * Folder, tag and smart-folder changes for one workspace's sidebar. Renames, colours, moves and
@@ -113,17 +105,10 @@ export function useSidebarActions(workspaceId: string) {
     },
 
     async trashFolder(folder: FolderView) {
-      const descendants = new Set([folder.id]);
-      const all = qc.getQueryData<WorkspaceSidebar>(key)?.folders ?? [];
-      for (let grew = true; grew;) {
-        grew = false;
-        for (const f of all) {
-          if (f.parentId && descendants.has(f.parentId) && !descendants.has(f.id)) {
-            descendants.add(f.id);
-            grew = true;
-          }
-        }
-      }
+      const descendants = descendantIds(
+        qc.getQueryData<WorkspaceSidebar>(key)?.folders ?? [],
+        folder.id,
+      );
       let moved = { folders: 0, documents: 0 };
       const ok = await optimistic(
         (s) => ({ ...s, folders: s.folders.filter((f) => !descendants.has(f.id)) }),

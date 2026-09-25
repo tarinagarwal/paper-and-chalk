@@ -1,7 +1,15 @@
 import type { LibraryDocument, LibraryScope } from "@pc/schema";
 import { describe, expect, it } from "vitest";
 
-import { applyChange, changeView, scopeOfKey, libraryKeys, type LibraryData } from "./cache";
+import {
+  applyChange,
+  changeView,
+  currentFolders,
+  groupByFolder,
+  libraryKeys,
+  scopeOfKey,
+  type LibraryData,
+} from "./cache";
 import { formatShortDate, pagesLabel, trashCountdown } from "./format";
 
 const WS = "0196b3a0-0000-7000-8000-000000000001";
@@ -94,6 +102,37 @@ describe("optimistic library changes", () => {
     });
     expect(scopeOfKey(key)).toEqual(folder);
     expect(scopeOfKey(libraryKeys.storage)).toBeNull();
+  });
+});
+
+describe("undoing a move", () => {
+  const OTHER = "0196b3a0-0000-7000-8000-0000000000f2";
+  const TARGET = "0196b3a0-0000-7000-8000-0000000000f3";
+
+  it("remembers where each document was and sends each group back to its own folder", () => {
+    const home: LibraryData = {
+      pageParams: [null],
+      pages: [
+        {
+          items: [doc("a"), doc("b", { folderId: null }), doc("c", { folderId: OTHER })],
+          nextCursor: null,
+          total: 3,
+        },
+      ],
+    };
+    const inFolder: LibraryData = {
+      pageParams: [null],
+      pages: [{ items: [doc("d", { folderId: TARGET })], nextCursor: null, total: 1 }],
+    };
+    const before = currentFolders([home, undefined, inFolder], ["a", "b", "c", "d", "gone"]);
+    expect(before.get("b")).toBeNull();
+    expect(before.has("gone")).toBe(false);
+    // "d" was already in the target folder, and "gone" is not known: neither moves back.
+    expect(groupByFolder(before, ["a", "b", "c", "d", "gone"], TARGET)).toEqual([
+      { folderId: FOLDER, ids: ["a"] },
+      { folderId: null, ids: ["b"] },
+      { folderId: OTHER, ids: ["c"] },
+    ]);
   });
 });
 

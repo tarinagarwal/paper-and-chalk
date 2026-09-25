@@ -8,6 +8,7 @@ import {
   ChevronRight,
   ChevronsUpDown,
   Clock3,
+  FolderInput,
   FolderPlus,
   Home,
   MoreHorizontal,
@@ -28,6 +29,7 @@ import { FolderGlyph } from "@/components/library/folder-icon";
 import { useActiveWorkspace, useLibrary } from "@/components/library/library-context";
 import {
   FolderDialog,
+  FolderMoveDialog,
   RenameDialog,
   TagDialog,
   type FolderDraft,
@@ -68,8 +70,9 @@ import {
   SidebarRail,
 } from "@/components/ui/sidebar";
 import { useSidebarData, useStorageData } from "@/hooks/use-library-data";
-import { childrenOf, useSidebarActions, type SidebarActions } from "@/hooks/use-sidebar-actions";
+import { useSidebarActions, type SidebarActions } from "@/hooks/use-sidebar-actions";
 import { libraryApi } from "@/lib/library/api";
+import { childrenOf } from "@/lib/library/folders";
 import { formatBytes } from "@/lib/library/format";
 import { cn } from "@/lib/utils";
 
@@ -275,6 +278,7 @@ interface TreeProps {
   toggle: (id: string) => void;
   onNewSubfolder: (parent: FolderView) => void;
   onEdit: (folder: FolderView) => void;
+  onMove: (folder: FolderView) => void;
   onDelete: (folder: FolderView) => void;
   canEdit: boolean;
   draggingFolder: boolean;
@@ -374,6 +378,14 @@ function FolderNode({ folder, depth, ...tree }: TreeProps & { folder: FolderView
                 <PencilLine aria-hidden />
                 Rename, colour and icon
               </DropdownMenuItem>
+              <DropdownMenuItem
+                onSelect={() => {
+                  tree.onMove(folder);
+                }}
+              >
+                <FolderInput aria-hidden />
+                Move to…
+              </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem
                 variant="destructive"
@@ -423,6 +435,7 @@ function FoldersGroup({ actions, canEdit }: { actions: SidebarActions; canEdit: 
     { kind: "create"; parent: FolderView | null } | { kind: "edit"; folder: FolderView } | null
   >(null);
   const [deleting, setDeleting] = useState<FolderView | null>(null);
+  const [moving, setMoving] = useState<FolderView | null>(null);
   const initial = useMemo<FolderDraft>(
     () =>
       dialog?.kind === "edit"
@@ -466,6 +479,7 @@ function FoldersGroup({ actions, canEdit }: { actions: SidebarActions; canEdit: 
               onEdit={(folder) => {
                 setDialog({ kind: "edit", folder });
               }}
+              onMove={setMoving}
               onDelete={setDeleting}
             />
           ))}
@@ -503,6 +517,21 @@ function FoldersGroup({ actions, canEdit }: { actions: SidebarActions; canEdit: 
             setDialog(null);
             if (parent && !expanded.has(parent.id)) toggle(parent.id);
           }
+        }}
+      />
+      <FolderMoveDialog
+        folder={moving}
+        folders={sidebar.folders}
+        onClose={() => {
+          setMoving(null);
+        }}
+        onMove={(parentId, beforeId) => {
+          const folder = moving;
+          setMoving(null);
+          if (!folder) return;
+          // Keep the moved folder in sight: open the folder it went into.
+          if (parentId && !expanded.has(parentId)) toggle(parentId);
+          void actions.moveFolder(folder.id, parentId, beforeId);
         }}
       />
       <AlertDialog

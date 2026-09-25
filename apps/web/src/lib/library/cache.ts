@@ -112,3 +112,37 @@ export function changeView(
 export function itemsOf(data: LibraryData | undefined): LibraryDocument[] {
   return data ? data.pages.flatMap((p) => p.items) : [];
 }
+
+/** The folder each listed document is in now, read from whichever cached views hold it. */
+export function currentFolders(
+  views: readonly (LibraryData | undefined)[],
+  ids: readonly string[],
+): Map<string, string | null> {
+  const wanted = new Set(ids);
+  const found = new Map<string, string | null>();
+  for (const data of views) {
+    for (const item of itemsOf(data)) {
+      if (wanted.has(item.id) && !found.has(item.id)) found.set(item.id, item.folderId);
+    }
+  }
+  return found;
+}
+
+/**
+ * Documents grouped by the folder they came from, for undoing a move: one group per original
+ * folder, skipping documents that were already in `movedTo`.
+ */
+export function groupByFolder(
+  folders: ReadonlyMap<string, string | null>,
+  ids: readonly string[],
+  movedTo: string | null,
+): { folderId: string | null; ids: string[] }[] {
+  const groups = new Map<string | null, string[]>();
+  for (const id of ids) {
+    if (!folders.has(id)) continue;
+    const folderId = folders.get(id) ?? null;
+    if (folderId === movedTo) continue;
+    groups.set(folderId, [...(groups.get(folderId) ?? []), id]);
+  }
+  return [...groups].map(([folderId, grouped]) => ({ folderId, ids: grouped }));
+}

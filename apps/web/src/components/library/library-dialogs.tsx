@@ -34,8 +34,8 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { childrenOf } from "@/hooks/use-sidebar-actions";
 import { useSidebarData } from "@/hooks/use-library-data";
+import { childrenOf, flattenTree, moveTargets, nextSibling } from "@/lib/library/folders";
 import { countLabel } from "@/lib/library/format";
 import { cn } from "@/lib/utils";
 
@@ -47,21 +47,6 @@ import {
 } from "./folder-icon";
 
 const titleClass = "font-display text-[1.5rem] leading-tight font-normal tracking-[-0.01em]";
-
-/** Folders in tree order with their depth, for pickers. */
-export function flattenTree(
-  folders: readonly FolderView[],
-): { folder: FolderView; depth: number }[] {
-  const out: { folder: FolderView; depth: number }[] = [];
-  const walk = (parentId: string | null, depth: number) => {
-    for (const folder of childrenOf(folders, parentId)) {
-      out.push({ folder, depth });
-      walk(folder.id, depth + 1);
-    }
-  };
-  walk(null, 0);
-  return out;
-}
 
 // ---------------------------------------------------------------------------------------------
 
@@ -698,6 +683,122 @@ export function RenameDialog({
             </Button>
             <Button type="submit" disabled={!trimmed}>
               Rename
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/**
+ * Moves a folder with the keyboard (the tree's drag and drop does the same with a pointer):
+ * pick where it goes, then where among that folder's subfolders.
+ */
+export function FolderMoveDialog({
+  folder,
+  folders,
+  onClose,
+  onMove,
+}: {
+  folder: FolderView | null;
+  folders: FolderView[];
+  onClose: () => void;
+  onMove: (parentId: string | null, beforeId: string | null) => void;
+}) {
+  const [parent, setParent] = useState<string>("top");
+  const [before, setBefore] = useState<string>("end");
+  const [lastFolder, setLastFolder] = useState<FolderView | null>(null);
+  if (folder !== lastFolder) {
+    setLastFolder(folder);
+    // Opens where the folder is now.
+    setParent(folder?.parentId ?? "top");
+    setBefore(folder ? (nextSibling(folders, folder) ?? "end") : "end");
+  }
+  const parentId = parent === "top" ? null : parent;
+  const siblings = childrenOf(folders, parentId).filter((f) => f.id !== folder?.id);
+  const targets = folder ? moveTargets(folders, folder.id) : [];
+
+  return (
+    <Dialog
+      open={folder !== null}
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+    >
+      <DialogContent className="gap-5 sm:max-w-md" data-testid="folder-move-dialog">
+        <DialogHeader>
+          <DialogTitle className={titleClass}>Move “{folder?.name}”</DialogTitle>
+          <DialogDescription>Choose the folder it goes in, then its place there.</DialogDescription>
+        </DialogHeader>
+        <form
+          className="flex flex-col gap-5"
+          onSubmit={(event) => {
+            event.preventDefault();
+            onMove(parentId, before === "end" ? null : before);
+          }}
+        >
+          <fieldset className="max-h-64 overflow-y-auto rounded-lg border p-1">
+            <legend className="sr-only">Put it in</legend>
+            {[
+              { id: "top", name: "Top level", depth: 0, glyph: null as FolderView | null },
+              ...targets.map((t) => ({
+                id: t.folder.id,
+                name: t.folder.name,
+                depth: t.depth + 1,
+                glyph: t.folder,
+              })),
+            ].map((option) => (
+              <label
+                key={option.id}
+                className="flex cursor-pointer items-center gap-2 rounded-md py-1.5 pr-2 text-sm hover:bg-muted has-checked:bg-accent has-focus-visible:ring-2 has-focus-visible:ring-ring"
+                style={{ paddingLeft: `${String(0.5 + option.depth)}rem` }}
+              >
+                <input
+                  type="radio"
+                  name="folder-parent"
+                  value={option.id}
+                  checked={parent === option.id}
+                  onChange={() => {
+                    setParent(option.id);
+                    setBefore("end");
+                  }}
+                  className="sr-only"
+                />
+                {option.glyph ? (
+                  <FolderGlyph icon={option.glyph.icon} color={option.glyph.color} />
+                ) : (
+                  <Folder aria-hidden className="size-4 text-muted-foreground" />
+                )}
+                <span className="flex-1 truncate">{option.name}</span>
+                {parent === option.id ? <Check aria-hidden className="size-4" /> : null}
+              </label>
+            ))}
+          </fieldset>
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="folder-position">Position</Label>
+            <select
+              id="folder-position"
+              value={before}
+              onChange={(event) => {
+                setBefore(event.target.value);
+              }}
+              className="h-9 rounded-md border bg-background px-2 text-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+            >
+              {siblings.map((sibling, index) => (
+                <option key={sibling.id} value={sibling.id}>
+                  {index === 0 ? `First, before “${sibling.name}”` : `Before “${sibling.name}”`}
+                </option>
+              ))}
+              <option value="end">{siblings.length > 0 ? "Last" : "Only folder here"}</option>
+            </select>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button type="submit" data-testid="folder-move-submit">
+              Move
             </Button>
           </DialogFooter>
         </form>

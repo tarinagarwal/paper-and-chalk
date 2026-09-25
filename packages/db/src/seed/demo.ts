@@ -243,7 +243,7 @@ export async function seedDemo(
     const inWeek4 = place(tarin, tarinHome, week4);
     const lecture8 = await inWeek4.notebook("Linear algebra, lecture 8", 12, 3, paper("cornell"));
     await inWeek4.canvas("Eigenvectors, visually", 11);
-    await place(tarin, tarinHome, home).notebook(
+    const bookshelf = await place(tarin, tarinHome, home).notebook(
       "Bookshelf measurements",
       6,
       1,
@@ -287,8 +287,8 @@ export async function seedDemo(
     await mayaTop.canvas("Mood board", 7);
     await mayaTop.notebook("Grocery run", 0, 1, paper("ruledNarrow", "a5"));
 
-    // Direct grants: Maya shares her reading list with Tarin; Tarin invites someone by email and
-    // lends Maya a notebook for a month.
+    // Direct grants: Maya shares her reading list with Tarin; Tarin invites someone by email,
+    // lends Maya a notebook for a month and lets her look at (not change) another.
     at(13);
     await repos.documents.grant(ctx(maya), readingList, {
       principal: { kind: "user", userId: tarin.id },
@@ -302,6 +302,10 @@ export async function seedDemo(
       principal: { kind: "user", userId: maya.id },
       role: "editor",
       expiresAt: new Date(today.getTime() + 30 * DAY),
+    });
+    await repos.documents.grant(ctx(tarin), bookshelf, {
+      principal: { kind: "user", userId: maya.id },
+      role: "viewer",
     });
 
     // Share links in every state, all on the roadmap.

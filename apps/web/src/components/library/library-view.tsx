@@ -28,9 +28,10 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { useLibraryActions } from "@/hooks/use-library-actions";
 import { useSidebarData } from "@/hooks/use-library-data";
-import { childrenOf, useSidebarActions } from "@/hooks/use-sidebar-actions";
+import { useSidebarActions } from "@/hooks/use-sidebar-actions";
 import { libraryApi } from "@/lib/library/api";
 import { itemsOf, libraryKeys } from "@/lib/library/cache";
+import { childrenOf } from "@/lib/library/folders";
 import { countLabel } from "@/lib/library/format";
 import {
   columnsOf,

@@ -1,3 +1,4 @@
+import { EMPTY_FILTERS } from "@pc/schema";
 import { ObjectId } from "mongodb";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
@@ -76,6 +77,31 @@ describe("demo seed", () => {
     };
     const shared = await repos.documents.listSharedWithMe(owner);
     expect(shared.map((d) => [d.title, d.role])).toEqual([["Reading list", "commenter"]]);
+  });
+
+  it("shares one notebook with the second user to edit and one only to view", async () => {
+    const repos = createRepositories(conn);
+    const maya = summary.users.find((u) => u.email === DEMO_USERS.second.email);
+    if (!maya) throw new Error("no second user");
+    const asMaya: AccessContext = {
+      actor: { kind: "user", userId: maya.id, email: DEMO_USERS.second.email },
+    };
+    const page = await repos.library.query(asMaya, {
+      scope: { kind: "shared" },
+      sort: "name",
+      dir: "asc",
+      filters: EMPTY_FILTERS,
+      cursor: null,
+      limit: 60,
+    });
+    expect(page.items.map((i) => [i.document.title, i.role, i.can.edit])).toEqual([
+      ["Bookshelf measurements", "viewer", false],
+      ["Linear algebra, lecture 8", "editor", true],
+    ]);
+    const viewOnly = page.items[0]?.document._id ?? "";
+    await expect(repos.documents.rename(asMaya, viewOnly, "Mine now")).rejects.toMatchObject({
+      reason: "role_too_low",
+    });
   });
 
   it("makes share links in every state", async () => {

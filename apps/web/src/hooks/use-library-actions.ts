@@ -13,6 +13,8 @@ import { toast } from "sonner";
 import { libraryApi, LibraryRequestError } from "@/lib/library/api";
 import {
   changeView,
+  currentFolders,
+  groupByFolder,
   libraryKeys,
   scopeOfKey,
   type LibraryData,
@@ -60,12 +62,15 @@ export function useLibraryActions() {
     void qc.invalidateQueries({ queryKey: libraryKeys.all, refetchType: "none" });
   }
 
-  /** Runs a bulk action with an optimistic change; returns the ids that worked. */
+  /**
+   * Runs a bulk action with an optimistic change; returns the ids that worked. `undo` gets those
+   * ids and becomes the success toast's Undo button; `quiet` skips the success toast.
+   */
   async function bulk(
     action: BulkAction,
     change: OptimisticChange | null,
     describe: { done: (count: number) => string; failed: string },
-    undo?: () => void,
+    options: { undo?: (done: string[]) => void; quiet?: boolean } = {},
   ): Promise<string[]> {
     await qc.cancelQueries({ queryKey: libraryKeys.all });
     const snap = snapshot();
@@ -90,10 +95,20 @@ export function useLibraryActions() {
       toast.error(
         `${describe.failed}: ${countLabel(result.failed.length)}. ${first ? first.message : ""}`.trim(),
       );
-    } else {
+    } else if (!options.quiet) {
+      const { undo } = options;
       toast.success(
         describe.done(result.done.length),
-        undo ? { action: { label: "Undo", onClick: undo } } : undefined,
+        undo
+          ? {
+              action: {
+                label: "Undo",
+                onClick: () => {
+                  undo(result.done);
+                },
+              },
+            }
+          : undefined,
       );
     }
     markStale();
@@ -117,11 +132,36 @@ export function useLibraryActions() {
     },
 
     move(ids: string[], folderId: string | null, destination: string) {
+      // Where each document was, read before the optimistic change, for Undo.
+      const before = currentFolders(
+        qc.getQueriesData<LibraryData>({ queryKey: libraryKeys.all }).map(([, data]) => data),
+        ids,
+      );
       return bulk(
         { action: "move", ids, folderId },
         { kind: "move", folderId },
         { done: (n) => `Moved ${countLabel(n)} to ${destination}`, failed: "Couldn't move" },
+        {
+          undo: (done) => {
+            void actions.moveBack(groupByFolder(before, done, folderId));
+          },
+        },
       );
+    },
+
+    /** Undo for a move: each group goes back to the folder it came from. */
+    async moveBack(groups: { folderId: string | null; ids: string[] }[]) {
+      let moved = 0;
+      for (const group of groups) {
+        const done = await bulk(
+          { action: "move", ids: group.ids, folderId: group.folderId },
+          { kind: "move", folderId: group.folderId },
+          { done: () => "", failed: "Couldn't move back" },
+          { quiet: true },
+        );
+        moved += done.length;
+      }
+      if (moved > 0) toast.success(`Moved ${countLabel(moved)} back`);
     },
 
     trash(ids: string[]) {
@@ -132,7 +172,11 @@ export function useLibraryActions() {
           done: (n) => `Moved ${countLabel(n)} to the trash`,
           failed: "Couldn't move to the trash",
         },
-        () => void actions.restore(ids),
+        {
+          undo: (done) => {
+            void actions.restore(done);
+          },
+        },
       );
     },
 

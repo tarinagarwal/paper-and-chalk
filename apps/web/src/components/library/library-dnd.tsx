@@ -19,6 +19,7 @@ import { useState } from "react";
 import { useLibraryActions } from "@/hooks/use-library-actions";
 import { useSidebarActions } from "@/hooks/use-sidebar-actions";
 import { libraryKeys } from "@/lib/library/cache";
+import { descendantIds } from "@/lib/library/folders";
 
 import { useLibrary } from "./library-context";
 
@@ -37,12 +38,9 @@ export type DropData =
   /** Between folders in the tree: reorder. */
   | { type: "gap"; workspaceId: string; parentId: string | null; beforeId: string | null };
 
+/** True when `folderId` is `of` or inside it (a folder can't move into its own subtree). */
 function isDescendant(sidebar: WorkspaceSidebar | undefined, folderId: string, of: string) {
-  const parentOf = new Map(sidebar?.folders.map((f) => [f.id, f.parentId]) ?? []);
-  for (let cursor: string | null | undefined = folderId; cursor; cursor = parentOf.get(cursor)) {
-    if (cursor === of) return true;
-  }
-  return false;
+  return descendantIds(sidebar?.folders ?? [], of).has(folderId);
 }
 
 /**
