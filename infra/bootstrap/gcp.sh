@@ -11,6 +11,7 @@ state_bucket="gs://${project}-tfstate"
 gcloud services enable --project "$project" \
   artifactregistry.googleapis.com \
   cloudresourcemanager.googleapis.com \
+  compute.googleapis.com \
   iam.googleapis.com \
   iamcredentials.googleapis.com \
   logging.googleapis.com \

@@ -67,8 +67,12 @@ locals {
       "google-client-id"     = "GOOGLE_CLIENT_ID"
       "google-client-secret" = "GOOGLE_CLIENT_SECRET"
     } : {},
+    var.web_domain != "" ? { "edge-proxy-secret" = "EDGE_PROXY_SECRET" } : {},
   )
-  all_secrets = toset(concat(keys(local.web_secrets), ["google-client-id", "google-client-secret"]))
+  all_secrets = toset(concat(
+    keys(local.web_secrets),
+    ["google-client-id", "google-client-secret", "edge-proxy-secret"],
+  ))
 }
 
 resource "google_secret_manager_secret" "this" {
@@ -298,34 +302,4 @@ resource "google_cloud_run_v2_service_iam_member" "deployer" {
   name     = each.key == "web" ? google_cloud_run_v2_service.web[0].name : google_cloud_run_v2_service.sync[0].name
   role     = "roles/run.developer"
   member   = "serviceAccount:${google_service_account.deployer.email}"
-}
-
-# --- Custom domains (Cloud Run domain mappings: free, managed TLS certificates) ------------------
-# The domain must first be verified for the deploying Google account (Search Console, a TXT
-# record). Terraform then prints the DNS records to add at the registrar (output dns_records).
-
-resource "google_cloud_run_domain_mapping" "web" {
-  count    = var.services_enabled && var.web_domain != "" ? 1 : 0
-  project  = var.gcp_project_id
-  location = var.gcp_region
-  name     = var.web_domain
-  metadata {
-    namespace = var.gcp_project_id
-  }
-  spec {
-    route_name = google_cloud_run_v2_service.web[0].name
-  }
-}
-
-resource "google_cloud_run_domain_mapping" "sync" {
-  count    = var.services_enabled && var.sync_domain != "" ? 1 : 0
-  project  = var.gcp_project_id
-  location = var.gcp_region
-  name     = var.sync_domain
-  metadata {
-    namespace = var.gcp_project_id
-  }
-  spec {
-    route_name = google_cloud_run_v2_service.sync[0].name
-  }
 }

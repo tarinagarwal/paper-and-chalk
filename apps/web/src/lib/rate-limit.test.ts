@@ -103,6 +103,23 @@ describe("UpstashStore", () => {
 });
 
 describe("clientIp", () => {
+  it("believes the edge proxy's client IP only with the right secret", () => {
+    const secret = "p".repeat(40);
+    const viaProxy = new Headers({
+      "x-forwarded-for": "198.51.100.7, 35.200.0.1",
+      "x-pc-client-ip": "198.51.100.7",
+      "x-pc-proxy-secret": secret,
+    });
+    expect(clientIp(viaProxy, secret)).toBe("198.51.100.7");
+    const forged = new Headers({
+      "x-forwarded-for": "203.0.113.9",
+      "x-pc-client-ip": "6.6.6.6",
+      "x-pc-proxy-secret": "wrong",
+    });
+    expect(clientIp(forged, secret)).toBe("203.0.113.9");
+    expect(clientIp(viaProxy)).toBe("35.200.0.1");
+  });
+
   it("uses the last X-Forwarded-For entry (appended by our proxy)", () => {
     const headers = new Headers({ "x-forwarded-for": "6.6.6.6, 203.0.113.9" });
     expect(clientIp(headers)).toBe("203.0.113.9");

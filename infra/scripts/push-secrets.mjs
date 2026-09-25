@@ -9,7 +9,8 @@
  *
  * - Values come from the --from file (same variable names as the app's .env).
  * - MONGODB_URI gets its database replaced by --mongo-database, so environments never share data.
- * - BETTER_AUTH_SECRET and SYNC_JWT_SECRET are generated per environment (once), never copied.
+ * - BETTER_AUTH_SECRET, SYNC_JWT_SECRET and the edge proxy secret are generated per environment
+ *   (once), never copied.
  * - A new version is added only when the value changed. Empty values are skipped (e.g. Google
  *   OAuth before its client exists).
  */
@@ -70,6 +71,7 @@ const secrets = {
   "mongodb-uri": mongoUri,
   "better-auth-secret": null,
   "sync-jwt-secret": null,
+  "edge-proxy-secret": null,
   "upstash-redis-rest-url": source.UPSTASH_REDIS_REST_URL ?? "",
   "upstash-redis-rest-token": source.UPSTASH_REDIS_REST_TOKEN ?? "",
   "smtp-user": source.SMTP_USER ?? "",

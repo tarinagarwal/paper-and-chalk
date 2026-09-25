@@ -48,6 +48,10 @@ module "env" {
   workers_image_tag    = "0c727eec6c1d3324b1f542358cc80a9f66b7dff1"
   google_oauth_enabled = var.google_oauth_enabled
 
+  # Custom domains: DNS at GoDaddy, A records -> the edge VM (output dns_records).
+  web_domain  = "staging.paperandchalk.lol"
+  sync_domain = "sync.staging.paperandchalk.lol"
+
   # Staging scales to zero; production keeps a warm sync instance.
   sync_min_instances    = 0
   force_destroy_buckets = true

@@ -56,7 +56,7 @@ async function limitSignIn(path: string, headers: Headers | undefined, rawBody: 
   const isSocial = path === "/sign-in/social";
   if (!isMagicLink && !isSocial) return;
 
-  const ip = clientIp(headers ?? new Headers());
+  const ip = clientIp(headers ?? new Headers(), env.EDGE_PROXY_SECRET);
   await enforce(rateLimits.signInPerIp, ip);
   if (isMagicLink) {
     await enforce(rateLimits.magicLinkPerIp, ip);

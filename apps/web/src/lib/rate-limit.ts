@@ -1,4 +1,11 @@
-import { createHash } from "node:crypto";
+import { createHash, timingSafeEqual } from "node:crypto";
+
+/** Constant-time string comparison (secrets). */
+function safeEqual(a: string, b: string): boolean {
+  const left = Buffer.from(a);
+  const right = Buffer.from(b);
+  return left.length === right.length && timingSafeEqual(left, right);
+}
 
 /**
  * Fixed-window rate limiting (SPEC.md section 27). The store is swappable: Upstash in the app,
@@ -111,11 +118,17 @@ export class UpstashStore implements RateLimitStore {
 }
 
 /**
- * The client address as seen by the proxy nearest to us. Cloud Run and Google load balancers
- * append the real client IP to X-Forwarded-For, so the last entry is the trustworthy one;
- * earlier entries can be forged by the client.
+ * The client address. Behind our edge proxy (the custom-domain VM), the proxy passes the real
+ * address in X-PC-Client-IP with a shared secret, and only then is that header believed.
+ * Otherwise Cloud Run appends the real client IP to X-Forwarded-For, so the last entry is the
+ * trustworthy one; earlier entries can be forged by the client.
  */
-export function clientIp(headers: Headers): string {
+export function clientIp(headers: Headers, proxySecret?: string): string {
+  if (proxySecret) {
+    const presented = headers.get("x-pc-proxy-secret") ?? "";
+    const forwarded = headers.get("x-pc-client-ip")?.trim();
+    if (forwarded && safeEqual(presented, proxySecret)) return forwarded;
+  }
   const last = headers.get("x-forwarded-for")?.split(",").at(-1)?.trim();
   if (last) return last;
   // `||`, not `??`: an empty header value should fall through too.

@@ -33,6 +33,8 @@ export const env = createEnv({
     EMAIL_FROM: z.string().min(3).default("Paper & Chalk <no-reply@localhost>"),
 
     SYNC_JWT_SECRET: secret,
+    /** Shared with the custom-domain edge proxy, which uses it to vouch for the client IP. */
+    EDGE_PROXY_SECRET: secret.optional(),
 
     ...storageEnv,
 
