@@ -6,7 +6,11 @@ import { repoContext } from "./context";
 import { documentsRepository } from "./documents";
 import { foldersRepository } from "./folders";
 import { jobsRepository } from "./jobs";
+import { libraryRepository } from "./library";
 import { pagesRepository } from "./pages";
+import { smartFoldersRepository } from "./smart-folders";
+import { tagsRepository } from "./tags";
+import { trashRepository } from "./trash";
 import { uploadsRepository } from "./uploads";
 import { verificationRepository } from "./verification";
 import { ensurePersonalWorkspace, workspacesRepository } from "./workspaces";
@@ -22,6 +26,10 @@ export function createRepositories(conn: MongoConnection, now?: () => Date) {
     folders: foldersRepository(r),
     documents: documentsRepository(r),
     pages: pagesRepository(r),
+    tags: tagsRepository(r),
+    smartFolders: smartFoldersRepository(r),
+    /** Every library view (SPEC.md section 5) with filters, sorting and paging. */
+    library: libraryRepository(r),
     /** System: background job records. */
     jobs: jobsRepository(r),
     /** Idempotent: personal workspace + owner membership for a user (first sign-in). */
@@ -39,11 +47,20 @@ export function createFileRepositories(conn: MongoConnection, storage: Storage, 
     assets: assetsRepository(r, storage),
     /** System: run by the verifyAsset job. */
     verification: verificationRepository(r, storage),
+    /** Delete forever (users) and the 30-day purge (the purgeTrash job). */
+    trash: trashRepository(r, storage),
   };
 }
 
 export type FileRepositories = ReturnType<typeof createFileRepositories>;
 export type { UploadInitResult } from "./uploads";
 export type { VerificationResult } from "./verification";
-export { DEFAULT_NOTEBOOK_PAGE, type DocumentWithRole, type ShareLinkView } from "./documents";
+export {
+  copyTitle,
+  DEFAULT_NOTEBOOK_PAGE,
+  type DocumentWithRole,
+  type ShareLinkView,
+} from "./documents";
+export type { LibraryItem, LibraryResult } from "./library";
+export type { ExpiredPurgeResult, PurgeFailure } from "./trash";
 export type { WorkspaceWithRole } from "./workspaces";

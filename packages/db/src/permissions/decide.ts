@@ -251,3 +251,21 @@ export function decideFolder(f: WorkspaceFacts, action: FolderAction): Decision 
   if (action === "view") return base;
   return atLeast(base.role, "editor") ? base : deny("role_too_low", base.role);
 }
+
+// ---------------------------------------------------------------------------------------------
+// smart folders
+
+export interface SmartFolderFacts extends WorkspaceFacts {
+  /** The acting user saved this smart folder. */
+  isOwner: boolean;
+}
+
+/**
+ * Smart folders are private saved views: only the user who saved one may see or change it, and
+ * only while they can still see its workspace. To anyone else it does not exist.
+ */
+export function decideSmartFolder(f: SmartFolderFacts): Decision {
+  const base = decideWorkspace(f, "view");
+  if (!base.allowed) return base;
+  return f.isOwner ? base : deny("not_found");
+}

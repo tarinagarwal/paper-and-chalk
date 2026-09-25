@@ -27,7 +27,13 @@ function record(id: string, body: unknown, received = 1): SQSRecord {
 
 function services(log: string[]): WorkerServices {
   return {
-    files: { verification: { verify: () => Promise.resolve({ status: "ready" }) } },
+    files: {
+      verification: { verify: () => Promise.resolve({ status: "ready" }) },
+      trash: {
+        purgeExpired: () =>
+          Promise.resolve({ documents: 0, folders: 0, objectsRemoved: 0, objectsFailed: 0 }),
+      },
+    },
     jobs: {
       start: (id) => {
         log.push(`start ${id}`);
@@ -77,5 +83,37 @@ describe("SQS handler", () => {
       `fail ${JOB} boom`,
       `fail ${JOB} invalid job payload`,
     ]);
+  });
+
+  it("runs the scheduled trash purge, which has no job record", async () => {
+    const calls: string[] = [];
+    const purged: unknown[] = [];
+    const base = services(calls);
+    const handle = createSqsHandler(() =>
+      Promise.resolve({
+        ...base,
+        files: {
+          ...base.files,
+          trash: {
+            purgeExpired: (options) => {
+              purged.push(options);
+              return Promise.resolve({
+                documents: 3,
+                folders: 1,
+                objectsRemoved: 2,
+                objectsFailed: 0,
+              });
+            },
+          },
+        },
+      }),
+    );
+    // The exact body EventBridge Scheduler sends (infra/modules/env/aws.tf).
+    const result = await handle({
+      Records: [record("cron", { jobId: null, kind: "purgeTrash", payload: {} })],
+    });
+    expect(result).toEqual({ batchItemFailures: [] });
+    expect(purged).toEqual([{}]);
+    expect(calls).toEqual([]);
   });
 });

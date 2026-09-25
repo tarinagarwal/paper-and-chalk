@@ -1,4 +1,5 @@
-import type { WorkspaceRecord } from "@pc/schema";
+import { EMPTY_FILTERS, type LibraryScope, type WorkspaceRecord } from "@pc/schema";
+import { testStorage } from "@pc/storage/testing";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import type { MongoConnection } from "../client";
@@ -7,7 +8,7 @@ import { AccessDeniedError, InvalidRequestError } from "../errors";
 import { newId } from "../ids";
 import type { AccessContext } from "../permissions/can";
 import { closeTestDb, openTestDb } from "../testing";
-import { createRepositories, type Repositories } from "./index";
+import { createFileRepositories, createRepositories, type Repositories } from "./index";
 
 /** ada owns the "Biology 101" team workspace; ben is an editor there, cy a viewer; dee is outside. */
 const as = (userId: string): AccessContext => ({
@@ -21,6 +22,19 @@ const ada = as("ada");
 const ben = as("ben");
 const cy = as("cy");
 const dee = as("dee");
+
+/** Ids in one page of a library view, in order. */
+async function ids(repos: Repositories, ctx: AccessContext, scope: LibraryScope) {
+  const page = await repos.library.query(ctx, {
+    scope,
+    sort: "modified",
+    dir: "desc",
+    filters: EMPTY_FILTERS,
+    cursor: null,
+    limit: 200,
+  });
+  return page.items.map((i) => i.document._id);
+}
 
 /** "allowed", or the denial reason / invalid-request code the call failed with. */
 async function outcome(call: Promise<unknown>): Promise<string> {
@@ -38,6 +52,7 @@ describe("repositories", () => {
   let conn: MongoConnection;
   let c: TypedCollections;
   let repos: Repositories;
+  let files: ReturnType<typeof createFileRepositories>;
   let clock = new Date("2026-09-24T10:00:00.000Z");
   const advance = (ms: number) => {
     clock = new Date(clock.getTime() + ms);
@@ -49,6 +64,7 @@ describe("repositories", () => {
     conn = await openTestDb("repositories");
     c = typedCollections(conn.db);
     repos = createRepositories(conn, () => clock);
+    files = createFileRepositories(conn, testStorage(), () => clock);
     adaPersonal = await repos.ensurePersonalWorkspace("ada");
     for (const id of ["ben", "cy", "dee"]) await repos.ensurePersonalWorkspace(id);
     team = await repos.workspaces.create(ada, { name: "Biology 101" });
@@ -259,28 +275,6 @@ describe("repositories", () => {
       ).toBe("wrong_folder");
     });
 
-    it("lists by folder and sorts", async () => {
-      const ws = await repos.workspaces.create(ada, { name: "Sorting" });
-      const folder = await repos.folders.create(ada, { workspaceId: ws._id, name: "F" });
-      for (const title of ["Banana", "apple", "Cherry"]) {
-        advance(1000);
-        await repos.documents.create(ada, { workspaceId: ws._id, type: "canvas", title });
-      }
-      await repos.documents.create(ada, {
-        workspaceId: ws._id,
-        folderId: folder._id,
-        type: "canvas",
-        title: "In folder",
-      });
-      const top = await repos.documents.list(ada, ws._id, { folderId: null });
-      expect(top.map((d) => d.title)).toEqual(["Cherry", "apple", "Banana"]);
-      const byCreated = await repos.documents.list(ada, ws._id, { sort: "created", limit: 2 });
-      expect(byCreated.map((d) => d.title)).toEqual(["In folder", "Cherry"]);
-      const inFolder = await repos.documents.list(ada, ws._id, { folderId: folder._id });
-      expect(inFolder.map((d) => d.title)).toEqual(["In folder"]);
-      expect(await outcome(repos.documents.list(ben, ws._id))).toBe("no_access");
-    });
-
     it("renames, moves and tags", async () => {
       const doc = await repos.documents.create(ben, {
         workspaceId: team._id,
@@ -310,18 +304,6 @@ describe("repositories", () => {
       expect(await outcome(repos.documents.setTags(ben, doc._id, [newId()]))).toBe("unknown_tag");
       await repos.documents.setTags(ben, doc._id, [tagId, tagId]);
       expect((await repos.documents.get(cy, doc._id)).tagIds).toEqual([tagId]);
-    });
-
-    it("finds titles by fuzzy search, best match first", async () => {
-      const ws = await repos.workspaces.create(ada, { name: "Search" });
-      for (const title of ["Photosynthesis lab", "Cell division", "Photography club", "Physics"]) {
-        await repos.documents.create(ada, { workspaceId: ws._id, type: "canvas", title });
-      }
-      const hits = await repos.documents.searchTitles(ada, ws._id, "fotosynthesis");
-      expect(hits[0]?.document.title).toBe("Photosynthesis lab");
-      expect(hits.map((h) => h.document.title)).not.toContain("Cell division");
-      expect(await repos.documents.searchTitles(ada, ws._id, "  ")).toEqual([]);
-      expect(await outcome(repos.documents.searchTitles(dee, ws._id, "photo"))).toBe("no_access");
     });
   });
 
@@ -537,15 +519,19 @@ describe("repositories", () => {
         type: "canvas",
         title: "Scratch",
       });
-      expect(await outcome(repos.documents.purge(ben, doc._id))).toBe("not_in_trash");
+      expect((await files.trash.purge(ben, [doc._id])).failed).toEqual([
+        { id: doc._id, error: "not_in_trash", message: expect.any(String) as string },
+      ]);
       expect(await outcome(repos.documents.trash(cy, doc._id))).toBe("role_too_low");
       await repos.documents.trash(ben, doc._id);
 
       expect(await outcome(repos.documents.get(cy, doc._id))).toBe("document_deleted");
       expect(await outcome(repos.documents.rename(ben, doc._id, "x"))).toBe("document_deleted");
-      expect((await repos.documents.listTrash(ben, team._id)).map((d) => d._id)).toContain(doc._id);
-      expect(await repos.documents.listTrash(cy, team._id)).toEqual([]);
-      expect((await repos.documents.list(ada, team._id)).map((d) => d._id)).not.toContain(doc._id);
+      const trash = { kind: "trash", workspaceId: team._id } as const;
+      expect(await ids(repos, ben, trash)).toContain(doc._id);
+      expect(await ids(repos, cy, trash)).toEqual([]);
+      const home = { kind: "home", workspaceId: team._id } as const;
+      expect(await ids(repos, ada, home)).not.toContain(doc._id);
 
       await repos.documents.restore(ben, doc._id);
       expect((await repos.documents.get(cy, doc._id)).deletedAt).toBeNull();
@@ -612,8 +598,10 @@ describe("repositories", () => {
       });
 
       await repos.documents.trash(ada, doc._id);
-      expect(await outcome(repos.documents.purge(ben, doc._id))).toBe("document_deleted");
-      await repos.documents.purge(ada, doc._id);
+      expect((await files.trash.purge(ben, [doc._id])).failed.map((f) => f.error)).toEqual([
+        "document_deleted",
+      ]);
+      expect(await files.trash.purge(ada, [doc._id])).toEqual({ done: [doc._id], failed: [] });
 
       const byDoc = { documentId: doc._id };
       const left = await Promise.all([

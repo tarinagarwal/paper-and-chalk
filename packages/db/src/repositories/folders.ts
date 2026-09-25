@@ -1,4 +1,4 @@
-import { folderRecordSchema, keyBetween, type FolderRecord } from "@pc/schema";
+import { folderRecordSchema, keyBetween, type FolderIcon, type FolderRecord } from "@pc/schema";
 
 import { InvalidRequestError } from "../errors";
 import { newId } from "../ids";
@@ -16,6 +16,48 @@ export function foldersRepository(r: RepoContext) {
       .limit(1)
       .next();
     return last?.orderKey ?? null;
+  }
+
+  /**
+   * The order key that places a folder just before `beforeId` among `parentId`'s children, or
+   * last when `beforeId` is null. `movingId` is ignored as a neighbour (it is the one moving).
+   */
+  async function keyBefore(
+    workspaceId: string,
+    parentId: string | null,
+    beforeId: string | null,
+    movingId?: string,
+  ) {
+    if (!beforeId) {
+      const siblings = await c.folders
+        .find(
+          { workspaceId, parentId, deletedAt: null, _id: { $ne: movingId ?? "" } },
+          { projection: { orderKey: 1 } },
+        )
+        .sort({ orderKey: -1, _id: -1 })
+        .limit(1)
+        .toArray();
+      return keyBetween(siblings[0]?.orderKey ?? null, null);
+    }
+    const before = await c.folders.findOne({ _id: beforeId, deletedAt: null });
+    if (before?.workspaceId !== workspaceId || before.parentId !== parentId) {
+      throw new InvalidRequestError("wrong_folder", "That folder is not next to this one");
+    }
+    const previous = await c.folders
+      .find(
+        {
+          workspaceId,
+          parentId,
+          deletedAt: null,
+          _id: { $ne: movingId ?? "" },
+          orderKey: { $lt: before.orderKey },
+        },
+        { projection: { orderKey: 1 } },
+      )
+      .sort({ orderKey: -1, _id: -1 })
+      .limit(1)
+      .toArray();
+    return keyBetween(previous[0]?.orderKey ?? null, before.orderKey);
   }
 
   async function liveFolder(folderId: string) {
@@ -44,7 +86,13 @@ export function foldersRepository(r: RepoContext) {
   return {
     async create(
       ctx: AccessContext,
-      input: { workspaceId: string; parentId?: string | null; name: string; color?: string | null },
+      input: {
+        workspaceId: string;
+        parentId?: string | null;
+        name: string;
+        color?: string | null;
+        icon?: FolderIcon | null;
+      },
     ): Promise<FolderRecord> {
       const user = requireUser(ctx);
       await authorize(
@@ -70,7 +118,7 @@ export function foldersRepository(r: RepoContext) {
         parentId,
         name: input.name,
         color: input.color ?? null,
-        icon: null,
+        icon: input.icon ?? null,
         orderKey: keyBetween(await lastKey(input.workspaceId, parentId), null),
         createdBy: user.userId,
         createdAt: now,
@@ -93,16 +141,63 @@ export function foldersRepository(r: RepoContext) {
         .toArray();
     },
 
+    /** Every live folder in the workspace, in tree order within each parent (for the sidebar). */
+    async listAll(ctx: AccessContext, workspaceId: string): Promise<FolderRecord[]> {
+      await authorize(r, ctx, { type: "workspace", workspaceId }, "view");
+      return c.folders
+        .find({ workspaceId, deletedAt: null })
+        .sort({ parentId: 1, orderKey: 1, _id: 1 })
+        .toArray();
+    },
+
+    async get(ctx: AccessContext, folderId: string): Promise<FolderRecord> {
+      await authorize(r, ctx, { type: "folder", folderId }, "view");
+      return liveFolder(folderId);
+    },
+
     async rename(ctx: AccessContext, folderId: string, name: string): Promise<void> {
       await authorize(r, ctx, { type: "folder", folderId }, "edit");
       const parsed = folderRecordSchema.shape.name.parse(name);
       await c.folders.updateOne({ _id: folderId }, { $set: { name: parsed, updatedAt: r.now() } });
     },
 
-    /** Moves a folder under another folder (or to the top level), refusing cycles. */
-    async move(ctx: AccessContext, folderId: string, parentId: string | null): Promise<void> {
+    /** Name, colour and icon, any of them. */
+    async update(
+      ctx: AccessContext,
+      folderId: string,
+      input: { name?: string; color?: string | null; icon?: FolderIcon | null },
+    ): Promise<FolderRecord> {
       await authorize(r, ctx, { type: "folder", folderId }, "edit");
       const folder = await liveFolder(folderId);
+      const next = folderRecordSchema.parse({
+        ...folder,
+        ...(input.name !== undefined ? { name: input.name } : {}),
+        ...(input.color !== undefined ? { color: input.color } : {}),
+        ...(input.icon !== undefined ? { icon: input.icon } : {}),
+        updatedAt: r.now(),
+      });
+      await c.folders.updateOne(
+        { _id: folderId },
+        {
+          $set: { name: next.name, color: next.color, icon: next.icon, updatedAt: next.updatedAt },
+        },
+      );
+      return next;
+    },
+
+    /**
+     * Moves a folder under another folder (or to the top level), just before the sibling
+     * `beforeId` or last. Refuses cycles and moves between workspaces.
+     */
+    async move(
+      ctx: AccessContext,
+      folderId: string,
+      parentId: string | null,
+      beforeId: string | null = null,
+    ): Promise<FolderRecord> {
+      await authorize(r, ctx, { type: "folder", folderId }, "edit");
+      const folder = await liveFolder(folderId);
+      if (beforeId === folderId) return folder;
       if (parentId) {
         const target = await liveFolder(parentId);
         if (target.workspaceId !== folder.workspaceId) {
@@ -118,16 +213,13 @@ export function foldersRepository(r: RepoContext) {
           cursor = next?.parentId ?? null;
         }
       }
+      const orderKey = await keyBefore(folder.workspaceId, parentId, beforeId, folderId);
+      const now = r.now();
       await c.folders.updateOne(
         { _id: folderId },
-        {
-          $set: {
-            parentId,
-            orderKey: keyBetween(await lastKey(folder.workspaceId, parentId), null),
-            updatedAt: r.now(),
-          },
-        },
+        { $set: { parentId, orderKey, updatedAt: now } },
       );
+      return { ...folder, parentId, orderKey, updatedAt: now };
     },
 
     /** Moves the folder, its subfolders and their documents to the trash, together. */

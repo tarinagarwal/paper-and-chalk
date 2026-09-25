@@ -187,6 +187,55 @@ resource "aws_lambda_event_source_mapping" "jobs" {
   }
 }
 
+# --- Schedules -----------------------------------------------------------------------------------
+
+# EventBridge Scheduler puts scheduled jobs on the job queue like any other job (free tier: 14
+# million invocations a month). Scheduled jobs have no job record, so `jobId` is null.
+resource "aws_iam_role" "scheduler" {
+  count = var.workers_image_tag == "" ? 0 : 1
+  name  = "${local.prefix}-scheduler"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Principal = { Service = "scheduler.amazonaws.com" }
+      Action    = "sts:AssumeRole"
+      Condition = { StringEquals = { "aws:SourceAccount" = data.aws_caller_identity.this.account_id } }
+    }]
+  })
+  tags = local.tags
+}
+
+resource "aws_iam_role_policy" "scheduler" {
+  count = var.workers_image_tag == "" ? 0 : 1
+  name  = "send-jobs"
+  role  = aws_iam_role.scheduler[0].id
+  policy = jsonencode({
+    Version   = "2012-10-17"
+    Statement = [{ Effect = "Allow", Action = ["sqs:SendMessage"], Resource = aws_sqs_queue.jobs.arn }]
+  })
+}
+
+# Daily, early morning in India: delete what has been in the trash for 30 days, with its files.
+resource "aws_scheduler_schedule" "purge_trash" {
+  count                        = var.workers_image_tag == "" ? 0 : 1
+  name                         = "${local.prefix}-purge-trash"
+  schedule_expression          = "cron(30 3 * * ? *)"
+  schedule_expression_timezone = "Asia/Kolkata"
+  flexible_time_window {
+    mode                      = "FLEXIBLE"
+    maximum_window_in_minutes = 30
+  }
+  target {
+    arn      = aws_sqs_queue.jobs.arn
+    role_arn = aws_iam_role.scheduler[0].arn
+    input    = jsonencode({ jobId = null, kind = "purgeTrash", payload = {} })
+    retry_policy {
+      maximum_retry_attempts = 3
+    }
+  }
+}
+
 # --- The web app's AWS role (Cloud Run, keyless) -------------------------------------------------
 
 resource "aws_iam_role" "web" {

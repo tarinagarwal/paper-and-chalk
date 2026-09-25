@@ -18,6 +18,10 @@ function fakeServices(calls: JobCall[] = []): WorkerServices {
   return {
     files: {
       verification: { verify: () => Promise.resolve({ status: "skipped", reason: "not_found" }) },
+      trash: {
+        purgeExpired: () =>
+          Promise.resolve({ documents: 0, folders: 0, objectsRemoved: 0, objectsFailed: 0 }),
+      },
     },
     jobs: {
       start: (id) => {

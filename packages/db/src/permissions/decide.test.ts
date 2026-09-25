@@ -6,6 +6,7 @@ import {
   decideFolder,
   decideLayer,
   decidePage,
+  decideSmartFolder,
   decideWorkspace,
   type DocumentFacts,
   type LinkFacts,
@@ -396,5 +397,29 @@ describe("workspaces and folders", () => {
     expect(decideFolder(ws("viewer"), "view").allowed).toBe(true);
     expect(decideFolder(ws("viewer"), "edit")).toMatchObject({ reason: "role_too_low" });
     expect(decideFolder(ws("editor"), "delete").allowed).toBe(true);
+  });
+});
+
+describe("smart folders", () => {
+  const facts = (overrides: Partial<Parameters<typeof decideSmartFolder>[0]> = {}) => ({
+    isGuest: false,
+    memberRole: "viewer" as Role,
+    personal: false,
+    deleted: false,
+    isOwner: true,
+    ...overrides,
+  });
+
+  it("belong to the user who saved them while they can still see the workspace", () => {
+    expect(decideSmartFolder(facts()).allowed).toBe(true);
+    // To anyone else, even the workspace owner, it does not exist.
+    expect(decideSmartFolder(facts({ isOwner: false, memberRole: "owner" }))).toMatchObject({
+      reason: "not_found",
+    });
+    expect(decideSmartFolder(facts({ memberRole: null }))).toMatchObject({ reason: "no_access" });
+    expect(decideSmartFolder(facts({ isGuest: true }))).toMatchObject({
+      reason: "guests_not_allowed",
+    });
+    expect(decideSmartFolder(facts({ deleted: true }))).toMatchObject({ reason: "not_found" });
   });
 });

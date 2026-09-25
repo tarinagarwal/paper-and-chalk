@@ -26,3 +26,8 @@ export type Point = z.infer<typeof pointSchema>;
 
 /** Unix epoch milliseconds. */
 export const epochMsSchema = z.int().nonnegative();
+
+/** The three kinds of document (SPEC.md section 3). */
+export const DOCUMENT_TYPES = ["notebook", "canvas", "pdf"] as const;
+export const documentTypeSchema = z.enum(DOCUMENT_TYPES);
+export type DocumentType = z.infer<typeof documentTypeSchema>;

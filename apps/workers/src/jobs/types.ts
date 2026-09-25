@@ -5,7 +5,10 @@ import type { TaskMeta } from "../cloud-tasks";
 
 /** What job handlers may use. Built once per process in index.ts; tests pass their own. */
 export interface WorkerServices {
-  files: Pick<FileRepositories, "verification">;
+  files: {
+    verification: Pick<FileRepositories["verification"], "verify">;
+    trash: Pick<FileRepositories["trash"], "purgeExpired">;
+  };
   /** Job records; the server updates them when a request carries a job id. */
   jobs: Pick<Repositories["jobs"], "start" | "succeed" | "fail">;
 }

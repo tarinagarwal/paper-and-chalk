@@ -61,3 +61,7 @@ export type PageAction = (typeof PAGE_ACTIONS)[number];
 
 export const LAYER_ACTIONS = ["view", "edit"] as const;
 export type LayerAction = (typeof LAYER_ACTIONS)[number];
+
+/** Smart folders are private saved views: the same rule for looking and changing. */
+export const SMART_FOLDER_ACTIONS = ["view", "edit"] as const;
+export type SmartFolderAction = (typeof SMART_FOLDER_ACTIONS)[number];

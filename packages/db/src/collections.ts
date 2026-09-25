@@ -5,10 +5,12 @@ import type {
   CommentRecord,
   DocumentPermissionRecord,
   DocumentRecord,
+  DocumentUserStateRecord,
   FolderRecord,
   JobRecord,
   PageRecord,
   ShareLinkRecord,
+  SmartFolderRecord,
   TagRecord,
   UploadRecord,
   VersionRecord,
@@ -45,6 +47,8 @@ export const collections = {
   activity: "activity",
   yjsUpdates: "yjsUpdates",
   uploads: "uploads",
+  documentUserStates: "documentUserStates",
+  smartFolders: "smartFolders",
 } as const;
 
 export type CollectionName = (typeof collections)[keyof typeof collections];
@@ -84,6 +88,8 @@ export function typedCollections(db: Db) {
     activity: c<ActivityRecord>(collections.activity),
     yjsUpdates: c<YjsUpdateRecord>(collections.yjsUpdates),
     uploads: c<UploadRecord>(collections.uploads),
+    documentUserStates: c<DocumentUserStateRecord>(collections.documentUserStates),
+    smartFolders: c<SmartFolderRecord>(collections.smartFolders),
   };
 }
 

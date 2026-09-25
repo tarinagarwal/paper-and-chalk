@@ -6,8 +6,14 @@
 import { z } from "zod";
 
 import { roleSchema, shareLinkRoleSchema } from "./access";
+import { libraryFiltersSchema, librarySortSchema, sortDirSchema } from "./library";
 import { pageBackgroundSchema, pageRotationSchema, pageSpecSchema } from "./page";
-import { fractionalIndexSchema, hexColorSchema, positivePoints } from "./primitives";
+import {
+  documentTypeSchema,
+  fractionalIndexSchema,
+  hexColorSchema,
+  positivePoints,
+} from "./primitives";
 import { EMBEDDING_DIMENSIONS } from "./search";
 import {
   ASSET_BUCKETS,
@@ -82,10 +88,6 @@ export type TagRecord = z.infer<typeof tagRecordSchema>;
 // ---------------------------------------------------------------------------------------------
 // documents and pages
 
-export const DOCUMENT_TYPES = ["notebook", "canvas", "pdf"] as const;
-export const documentTypeSchema = z.enum(DOCUMENT_TYPES);
-export type DocumentType = z.infer<typeof documentTypeSchema>;
-
 export const documentCoverSchema = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("color"), color: hexColorSchema }),
   z.strictObject({ kind: z.literal("image"), assetId: recordId }),
@@ -99,13 +101,19 @@ export const documentRecordSchema = z.strictObject({
   title: z.string().trim().min(1).max(200),
   /** Trigrams of the title for fuzzy search (see search.ts). */
   titleTrigrams: z.array(z.string().length(3)).max(600),
+  /** Sort key for "name" order (titleSortKey in search.ts). */
+  titleKey: z.string().max(400),
   cover: documentCoverSchema.nullable(),
   /** Spec for new pages in notebooks; null for canvases. */
   defaultPageSpec: pageSpecSchema.nullable(),
   sourcePdfPath: z.string().max(1024).nullable(),
   pageCount: z.int().nonnegative(),
+  /** Bytes of the files that belong to the document (kept up to date as assets attach). */
+  bytes: z.int().nonnegative(),
   thumbnailPath: z.string().max(1024).nullable(),
   tagIds: z.array(recordId).max(50),
+  /** Anyone besides the creator has a grant, or a share link is live (the library's filter). */
+  isShared: z.boolean(),
   /** Section 4: editors may share only when the owner allows it. */
   editorsCanShare: z.boolean(),
   createdBy: userId,
@@ -114,6 +122,32 @@ export const documentRecordSchema = z.strictObject({
   ...softDelete,
 });
 export type DocumentRecord = z.infer<typeof documentRecordSchema>;
+
+/** One user's relation to one document: favourite and last opened (library section 5). */
+export const documentUserStateRecordSchema = z.strictObject({
+  _id: recordId,
+  userId,
+  documentId: recordId,
+  workspaceId: recordId,
+  favoritedAt: z.date().nullable(),
+  lastOpenedAt: z.date().nullable(),
+  ...timestamps,
+});
+export type DocumentUserStateRecord = z.infer<typeof documentUserStateRecordSchema>;
+
+/** A saved filter set in the library sidebar. Private to the user who saved it. */
+export const smartFolderRecordSchema = z.strictObject({
+  _id: recordId,
+  workspaceId: recordId,
+  userId,
+  name: z.string().trim().min(1).max(60),
+  filters: libraryFiltersSchema,
+  sort: librarySortSchema,
+  dir: sortDirSchema,
+  orderKey: fractionalIndexSchema,
+  ...timestamps,
+});
+export type SmartFolderRecord = z.infer<typeof smartFolderRecordSchema>;
 
 export const pageRecordSchema = z.strictObject({
   _id: recordId,

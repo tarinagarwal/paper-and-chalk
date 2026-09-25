@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { normaliseForSearch, trigrams, trigramSimilarity } from "./search";
+import { normaliseForSearch, titleSortKey, trigrams, trigramSimilarity } from "./search";
 
 describe("title search", () => {
   it("normalises case, accents and punctuation", () => {
@@ -22,5 +22,23 @@ describe("title search", () => {
     expect(close).toBeGreaterThan(0.4);
     expect(far).toBeLessThan(0.1);
     expect(trigramSimilarity([], query)).toBe(0);
+  });
+
+  it("sorts titles by name ignoring case and accents, with numbers in numeric order", () => {
+    const titles = ["lecture 10", "Lecture 9", "Émile", "apple", "Lecture 09b", "zebra", "Apple 2"];
+    const sorted = [...titles].sort((a, b) => {
+      const ka = titleSortKey(a);
+      const kb = titleSortKey(b);
+      return ka < kb ? -1 : ka > kb ? 1 : 0;
+    });
+    expect(sorted).toEqual([
+      "apple",
+      "Apple 2",
+      "Émile",
+      "Lecture 9",
+      "Lecture 09b",
+      "lecture 10",
+      "zebra",
+    ]);
   });
 });

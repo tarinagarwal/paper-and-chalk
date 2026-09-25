@@ -4,6 +4,7 @@ import { pingDb, type MongoConnection } from "../client";
 import { collections, typedCollections } from "../collections";
 import { closeTestDb, openTestDb } from "../testing";
 import { coreCollectionNames, coreCollections } from "./0002_core_collections";
+import { library } from "./0004_library";
 import { migrations, runMigrations } from "./index";
 
 describe("migrations", () => {
@@ -31,6 +32,7 @@ describe("migrations", () => {
       "0001_auth_indexes",
       "0002_core_collections",
       "0003_uploads",
+      "0004_library",
     ]);
   });
 
@@ -65,11 +67,22 @@ describe("migrations", () => {
     expect(await names(collections.documents)).toEqual(
       expect.arrayContaining([
         "workspace_folder_updated",
-        "workspace_trash_updated",
         "workspace_title_trigrams",
         "tagIds",
+        "library_updated",
+        "library_created",
+        "library_bytes",
+        "library_title",
+        "folder_updated",
+        "trash_purge",
       ]),
     );
+    expect(await names(collections.documents)).not.toContain("workspace_trash_updated");
+    expect(await names(collections.documentUserStates)).toEqual(
+      expect.arrayContaining(["user_document_unique", "user_recent", "user_favourites"]),
+    );
+    expect(await names(collections.smartFolders)).toContain("workspace_user_order");
+    expect(await names(collections.folders)).toContain("trash_purge");
     expect(await names(collections.pages)).toEqual(
       expect.arrayContaining(["document_order", "search_text"]),
     );
@@ -134,7 +147,88 @@ describe("migrations", () => {
     await expect(assets.insertOne(asset("a3", "verifying"))).rejects.toThrow(/duplicate key/);
   });
 
-  it("re-running the core migration updates existing collections", async () => {
+  it("re-running the core and library migrations updates existing collections", async () => {
     await expect(coreCollections.up(conn.db)).resolves.toBeUndefined();
+    await expect(library.up(conn.db)).resolves.toBeUndefined();
+  });
+});
+
+describe("0004_library on existing data", () => {
+  let conn: MongoConnection;
+
+  beforeAll(async () => {
+    conn = await openTestDb("migrations_backfill", { migrate: false });
+    for (const migration of migrations.slice(0, 3)) await migration.up(conn.db);
+  });
+
+  afterAll(async () => {
+    await closeTestDb(conn);
+  });
+
+  it("gives older documents a size and works out which are shared", async () => {
+    const documents = conn.db.collection<{ _id: string } & Record<string, unknown>>(
+      collections.documents,
+    );
+    const doc = (id: string) => ({
+      _id: id,
+      workspaceId: "w1",
+      folderId: null,
+      type: "canvas",
+      title: id,
+      titleTrigrams: [],
+      pageCount: 0,
+      tagIds: [],
+      editorsCanShare: false,
+      createdBy: "owner",
+      deletedAt: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    await documents.insertMany([doc("private"), doc("granted"), doc("linked"), doc("revoked")]);
+    const grant = (documentId: string, userId: string, role: string) => ({
+      _id: `${documentId}-${userId}`,
+      documentId,
+      principal: { kind: "user", userId },
+      role,
+      expiresAt: null,
+      grantedBy: "owner",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    await conn.db
+      .collection<{ _id: string }>(collections.documentPermissions)
+      .insertMany([
+        grant("private", "owner", "owner"),
+        grant("granted", "owner", "owner"),
+        grant("granted", "friend", "viewer"),
+      ]);
+    const link = (documentId: string, revokedAt: Date | null) => ({
+      _id: `${documentId}-link`,
+      documentId,
+      token: `${documentId}-token`,
+      role: "viewer",
+      expiresAt: null,
+      passwordHash: null,
+      allowDownload: true,
+      requireSignIn: false,
+      revokedAt,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    await conn.db
+      .collection<{ _id: string }>(collections.shareLinks)
+      .insertMany([link("linked", null), link("revoked", new Date())]);
+
+    await library.up(conn.db);
+
+    const after = await documents.find({}, { sort: { _id: 1 } }).toArray();
+    expect(after.map((d) => [d._id, d.bytes, d.isShared, d.titleKey])).toEqual([
+      ["granted", 0, true, "granted"],
+      ["linked", 0, true, "linked"],
+      ["private", 0, false, "private"],
+      ["revoked", 0, false, "revoked"],
+    ]);
+    // The new validator now requires both fields.
+    await expect(documents.insertOne(doc("late"))).rejects.toThrow(/Document failed validation/);
   });
 });

@@ -1,4 +1,5 @@
 import { ping } from "./ping";
+import { purgeTrash } from "./purge-trash";
 import type { JobHandlers } from "./types";
 import { verifyAsset } from "./verify-asset";
 
@@ -6,6 +7,7 @@ import { verifyAsset } from "./verify-asset";
 export const jobHandlers: JobHandlers = {
   ping,
   verifyAsset,
+  purgeTrash,
 };
 
 export type { JobContext, JobHandler, JobHandlers, WorkerServices } from "./types";

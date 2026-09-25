@@ -2,6 +2,8 @@ import { hash } from "@node-rs/argon2";
 import {
   documentPermissionRecordSchema,
   documentRecordSchema,
+  documentTitleSchema,
+  documentUserStateRecordSchema,
   highestRole,
   keysBetween,
   PAGE_SIZE_PRESETS,
@@ -10,25 +12,24 @@ import {
   principalSchema,
   roleSchema,
   shareLinkRecordSchema,
+  titleSortKey,
   trigrams,
-  trigramSimilarity,
   type DocumentPermissionRecord,
   type DocumentRecord,
   type DocumentType,
+  type DocumentUserStateRecord,
   type PageSpec,
   type Principal,
   type Role,
   type ShareLinkRecord,
   type ShareLinkRole,
 } from "@pc/schema";
-import type { Sort } from "mongodb";
-
 import { InvalidRequestError } from "../errors";
 import { newId, newToken } from "../ids";
-import type { AccessContext } from "../permissions/can";
+import { can, type AccessContext } from "../permissions/can";
 import { withTransaction } from "../transaction";
-import { deleteDocumentsCascade } from "./cascade";
 import { authorize, requireUser, type RepoContext } from "./context";
+import { ensurePersonalWorkspace } from "./workspaces";
 
 /** New notebooks: A4 portrait, college ruled (SPEC.md section 6 defaults). */
 export const DEFAULT_NOTEBOOK_PAGE: PageSpec = {
@@ -56,6 +57,16 @@ const toLinkView = ({ passwordHash, ...rest }: ShareLinkRecord): ShareLinkView =
   ...rest,
   hasPassword: passwordHash !== null,
 });
+
+/** A document keeps at most this many tags. */
+const MAX_TAGS = 50;
+
+/** "Notes" -> "Notes (copy)", trimmed so the result still fits the title limit. */
+export function copyTitle(title: string): string {
+  const suffix = " (copy)";
+  const max = documentTitleSchema.maxLength ?? 200;
+  return `${title.slice(0, max - suffix.length).trimEnd()}${suffix}`;
+}
 
 export function documentsRepository(r: RepoContext) {
   const { c } = r;
@@ -90,6 +101,62 @@ export function documentsRepository(r: RepoContext) {
     if (folder?.workspaceId !== workspaceId) {
       throw new InvalidRequestError("wrong_folder", "That folder is not in this workspace");
     }
+  }
+
+  async function checkTags(workspaceId: string, tagIds: readonly string[]) {
+    const unique = [...new Set(tagIds)];
+    const found = await c.tags.countDocuments({ _id: { $in: unique }, workspaceId });
+    if (found !== unique.length) {
+      throw new InvalidRequestError("unknown_tag", "Some tags are not in this workspace");
+    }
+    return unique;
+  }
+
+  /**
+   * Keeps `isShared` true while anyone besides the creator has a grant or a share link is live.
+   * Expiry is not tracked: an expired grant still counts until it is removed.
+   */
+  async function refreshShared(documentId: string) {
+    const document = await load(documentId);
+    const [grants, links] = await Promise.all([
+      c.documentPermissions.countDocuments(
+        { documentId, "principal.userId": { $ne: document.createdBy } },
+        { limit: 1 },
+      ),
+      c.shareLinks.countDocuments({ documentId, revokedAt: null }, { limit: 1 }),
+    ]);
+    const isShared = grants + links > 0;
+    if (isShared !== document.isShared) {
+      await c.documents.updateOne({ _id: documentId }, { $set: { isShared } });
+    }
+  }
+
+  /** Creates or updates the user's favourite / last-opened record for a document. */
+  async function setUserState(
+    userId: string,
+    document: DocumentRecord,
+    fields: Partial<Pick<DocumentUserStateRecord, "favoritedAt" | "lastOpenedAt">>,
+  ) {
+    const now = r.now();
+    const fresh = documentUserStateRecordSchema.parse({
+      _id: newId(),
+      userId,
+      documentId: document._id,
+      workspaceId: document.workspaceId,
+      favoritedAt: null,
+      lastOpenedAt: null,
+      createdAt: now,
+      updatedAt: now,
+    });
+    const onInsert = Object.fromEntries(
+      Object.entries(fresh).filter(([key]) => !(key in fields) && key !== "updatedAt"),
+    );
+    // The unique (userId, documentId) index lets MongoDB retry a racing upsert as an update.
+    await c.documentUserStates.updateOne(
+      { userId, documentId: document._id },
+      { $set: { ...fields, updatedAt: now }, $setOnInsert: onInsert },
+      { upsert: true },
+    );
   }
 
   return {
@@ -133,12 +200,15 @@ export function documentsRepository(r: RepoContext) {
         type: input.type,
         title: input.title,
         titleTrigrams: trigrams(input.title),
+        titleKey: titleSortKey(input.title),
         cover: null,
         defaultPageSpec: spec,
         sourcePdfPath: null,
         pageCount,
+        bytes: 0,
         thumbnailPath: null,
         tagIds: [],
+        isShared: false,
         editorsCanShare: false,
         createdBy: user.userId,
         deletedBy: null,
@@ -194,33 +264,6 @@ export function documentsRepository(r: RepoContext) {
       return { ...(await load(documentId)), role };
     },
 
-    /** Documents in a workspace folder (or the whole workspace), newest first. */
-    async list(
-      ctx: AccessContext,
-      workspaceId: string,
-      options: {
-        folderId?: string | null;
-        sort?: "updated" | "created" | "title";
-        limit?: number;
-      } = {},
-    ): Promise<DocumentRecord[]> {
-      await authorize(r, ctx, { type: "workspace", workspaceId }, "view");
-      const filter: Record<string, unknown> = { workspaceId, deletedAt: null };
-      if (options.folderId !== undefined) filter.folderId = options.folderId;
-      // UUIDv7 ids are time-ordered, so `_id: -1` breaks same-millisecond ties newest first too.
-      const sort: Sort =
-        options.sort === "title"
-          ? { title: 1, _id: 1 }
-          : options.sort === "created"
-            ? { createdAt: -1, _id: -1 }
-            : { updatedAt: -1, _id: -1 };
-      return c.documents
-        .find(filter)
-        .sort(sort)
-        .limit(Math.min(options.limit ?? 100, 500))
-        .toArray();
-    },
-
     /** Documents shared with the user directly (by user id or email), outside their workspaces. */
     async listSharedWithMe(ctx: AccessContext): Promise<DocumentWithRole[]> {
       const user = requireUser(ctx);
@@ -257,34 +300,19 @@ export function documentsRepository(r: RepoContext) {
         .map((d) => ({ ...d, role: roleOf.get(d._id) ?? "viewer" }));
     },
 
-    /** The trash: documents deleted in the workspace that the user can restore. */
-    async listTrash(ctx: AccessContext, workspaceId: string): Promise<DocumentRecord[]> {
-      await authorize(r, ctx, { type: "workspace", workspaceId }, "view");
-      const deleted = await c.documents
-        .find({ workspaceId, deletedAt: { $ne: null } })
-        .sort({ deletedAt: -1 })
-        .limit(500)
-        .toArray();
-      const allowed = await Promise.all(
-        deleted.map(async (d) => {
-          const role = await authorize(
-            r,
-            ctx,
-            { type: "document", documentId: d._id },
-            "restore",
-          ).catch(() => null);
-          return role ? d : null;
-        }),
-      );
-      return allowed.filter((d): d is DocumentRecord => d !== null);
-    },
-
     async rename(ctx: AccessContext, documentId: string, title: string): Promise<void> {
       await authorize(r, ctx, { type: "document", documentId }, "edit");
       const parsed = documentRecordSchema.shape.title.parse(title);
       await c.documents.updateOne(
         { _id: documentId },
-        { $set: { title: parsed, titleTrigrams: trigrams(parsed), updatedAt: r.now() } },
+        {
+          $set: {
+            title: parsed,
+            titleTrigrams: trigrams(parsed),
+            titleKey: titleSortKey(parsed),
+            updatedAt: r.now(),
+          },
+        },
       );
     },
 
@@ -298,18 +326,147 @@ export function documentsRepository(r: RepoContext) {
     async setTags(ctx: AccessContext, documentId: string, tagIds: string[]): Promise<void> {
       await authorize(r, ctx, { type: "document", documentId }, "edit");
       const document = await load(documentId);
-      const unique = [...new Set(tagIds)];
-      const found = await c.tags.countDocuments({
-        _id: { $in: unique },
-        workspaceId: document.workspaceId,
-      });
-      if (found !== unique.length) {
-        throw new InvalidRequestError("unknown_tag", "Some tags are not in this workspace");
+      const unique = await checkTags(document.workspaceId, tagIds);
+      if (unique.length > MAX_TAGS) {
+        throw new InvalidRequestError("too_many_tags", "A document can have up to 50 tags");
       }
       await c.documents.updateOne(
         { _id: documentId },
         { $set: { tagIds: unique, updatedAt: r.now() } },
       );
+    },
+
+    /** Adds and removes tags without touching the others (safe for bulk and parallel edits). */
+    async changeTags(
+      ctx: AccessContext,
+      documentId: string,
+      change: { add?: readonly string[]; remove?: readonly string[] },
+    ): Promise<void> {
+      await authorize(r, ctx, { type: "document", documentId }, "edit");
+      const document = await load(documentId);
+      const add = await checkTags(document.workspaceId, change.add ?? []);
+      const remove = [...new Set(change.remove ?? [])];
+      if (new Set([...document.tagIds, ...add]).size > MAX_TAGS) {
+        throw new InvalidRequestError("too_many_tags", "A document can have up to 50 tags");
+      }
+      const now = r.now();
+      if (add.length > 0) {
+        await c.documents.updateOne(
+          { _id: documentId },
+          { $addToSet: { tagIds: { $each: add } }, $set: { updatedAt: now } },
+        );
+      }
+      if (remove.length > 0) {
+        await c.documents.updateOne(
+          { _id: documentId },
+          { $pull: { tagIds: { $in: remove } }, $set: { updatedAt: now } },
+        );
+      }
+    },
+
+    /** Marks the document as opened by the user now (Recents and the "last opened" sort). */
+    async recordOpen(ctx: AccessContext, documentId: string): Promise<void> {
+      const user = requireUser(ctx);
+      await authorize(r, ctx, { type: "document", documentId }, "view");
+      const document = await load(documentId);
+      if (document.deletedAt) {
+        throw new InvalidRequestError("document_deleted", "This document is in the trash");
+      }
+      await setUserState(user.userId, document, { lastOpenedAt: r.now() });
+    },
+
+    async setFavourite(ctx: AccessContext, documentId: string, on: boolean): Promise<void> {
+      const user = requireUser(ctx);
+      await authorize(r, ctx, { type: "document", documentId }, "view");
+      const document = await load(documentId);
+      if (document.deletedAt && on) {
+        throw new InvalidRequestError("document_deleted", "This document is in the trash");
+      }
+      await setUserState(user.userId, document, { favoritedAt: on ? r.now() : null });
+    },
+
+    /**
+     * Copies a document's details and pages. The copy stays in the same workspace and folder when
+     * the user may add documents there; otherwise it goes to the top of their personal workspace.
+     * Sharing is not copied: the user owns the copy alone. Page content and files are copied by
+     * the steps that store them (see the deferred items in PROGRESS.md).
+     */
+    async duplicate(ctx: AccessContext, documentId: string): Promise<DocumentRecord> {
+      const user = requireUser(ctx);
+      await authorize(r, ctx, { type: "document", documentId }, "download");
+      const source = await load(documentId);
+      if (source.deletedAt) {
+        throw new InvalidRequestError("document_deleted", "This document is in the trash");
+      }
+      const now = r.now();
+      const canAddHere = (
+        await can(
+          c,
+          { ...ctx, now },
+          { type: "workspace", workspaceId: source.workspaceId },
+          "createContent",
+        )
+      ).allowed;
+      const workspaceId = canAddHere
+        ? source.workspaceId
+        : (await ensurePersonalWorkspace(r, user.userId))._id;
+      const folderAlive =
+        canAddHere &&
+        source.folderId !== null &&
+        (await c.folders.countDocuments({ _id: source.folderId, deletedAt: null })) > 0;
+
+      const title = copyTitle(source.title);
+      const copy = documentRecordSchema.parse({
+        ...source,
+        _id: newId(),
+        workspaceId,
+        folderId: folderAlive ? source.folderId : null,
+        title,
+        titleTrigrams: trigrams(title),
+        titleKey: titleSortKey(title),
+        bytes: 0,
+        thumbnailPath: null,
+        tagIds: canAddHere ? source.tagIds : [],
+        isShared: false,
+        editorsCanShare: false,
+        createdBy: user.userId,
+        deletedBy: null,
+        createdAt: now,
+        updatedAt: now,
+        deletedAt: null,
+      });
+      const owner = documentPermissionRecordSchema.parse({
+        _id: newId(),
+        documentId: copy._id,
+        principal: { kind: "user", userId: user.userId },
+        role: "owner",
+        expiresAt: null,
+        grantedBy: user.userId,
+        createdAt: now,
+        updatedAt: now,
+      });
+      const pages = (
+        await c.pages.find({ documentId, deletedAt: null }).sort({ orderKey: 1, _id: 1 }).toArray()
+      ).map((page) => {
+        const id = newId();
+        return pageRecordSchema.parse({
+          ...page,
+          _id: id,
+          documentId: copy._id,
+          ydocName: `page:${id}`,
+          thumbnailPath: null,
+          locked: false,
+          lockedBy: null,
+          createdAt: now,
+          updatedAt: now,
+        });
+      });
+      await withTransaction(r.conn.client, async (session) => {
+        await c.documents.insertOne(copy, { session });
+        await c.documentPermissions.insertOne(owner, { session });
+        if (pages.length > 0) await c.pages.insertMany(pages, { session });
+      });
+      return copy;
     },
 
     async setEditorsCanShare(
@@ -357,14 +514,6 @@ export function documentsRepository(r: RepoContext) {
       );
     },
 
-    /** Permanently deletes a trashed document and everything that belongs to it. */
-    async purge(ctx: AccessContext, documentId: string): Promise<void> {
-      await authorize(r, ctx, { type: "document", documentId }, "purge");
-      await withTransaction(r.conn.client, (session) =>
-        deleteDocumentsCascade(c, [documentId], session),
-      );
-    },
-
     // -------------------------------------------------------------------------------------------
     // sharing
 
@@ -401,6 +550,7 @@ export function documentsRepository(r: RepoContext) {
         updatedAt: now,
       });
       await c.documentPermissions.replaceOne({ _id: record._id }, record, { upsert: true });
+      await refreshShared(documentId);
       return record;
     },
 
@@ -410,6 +560,7 @@ export function documentsRepository(r: RepoContext) {
       if (!grant) return;
       await guardOwnerGrant(documentId, actorRole, grant.role, null);
       await c.documentPermissions.deleteOne({ _id: permissionId });
+      await refreshShared(documentId);
     },
 
     async createShareLink(
@@ -444,6 +595,7 @@ export function documentsRepository(r: RepoContext) {
         updatedAt: now,
       });
       await c.shareLinks.insertOne(link);
+      await refreshShared(documentId);
       return toLinkView(link);
     },
 
@@ -460,30 +612,7 @@ export function documentsRepository(r: RepoContext) {
         { _id: linkId, documentId, revokedAt: null },
         { $set: { revokedAt: r.now(), updatedAt: r.now() } },
       );
-    },
-
-    /** Fuzzy title search in one workspace, best matches first (trigram similarity). */
-    async searchTitles(
-      ctx: AccessContext,
-      workspaceId: string,
-      query: string,
-      limit = 20,
-    ): Promise<{ document: DocumentRecord; score: number }[]> {
-      await authorize(r, ctx, { type: "workspace", workspaceId }, "view");
-      const grams = trigrams(query);
-      if (grams.length === 0) return [];
-      const candidates = await c.documents
-        .find({ workspaceId, deletedAt: null, titleTrigrams: { $in: grams } })
-        .limit(500)
-        .toArray();
-      return candidates
-        .map((document) => ({ document, score: trigramSimilarity(grams, document.titleTrigrams) }))
-        .filter((hit) => hit.score >= 0.15)
-        .sort(
-          (a, b) =>
-            b.score - a.score || b.document.updatedAt.getTime() - a.document.updatedAt.getTime(),
-        )
-        .slice(0, limit);
+      await refreshShared(documentId);
     },
   };
 }

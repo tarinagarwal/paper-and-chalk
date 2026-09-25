@@ -10,6 +10,7 @@ import type {
   LayerAction,
   PageAction,
   Role,
+  SmartFolderAction,
   WorkspaceAction,
 } from "@pc/schema";
 
@@ -19,6 +20,7 @@ import {
   decideFolder,
   decideLayer,
   decidePage,
+  decideSmartFolder,
   decideWorkspace,
   deny,
   type Decision,
@@ -42,6 +44,7 @@ export interface AccessContext {
 export type Resource =
   | { type: "workspace"; workspaceId: string }
   | { type: "folder"; folderId: string }
+  | { type: "smartFolder"; smartFolderId: string }
   | { type: "document"; documentId: string }
   | { type: "page"; documentId: string; pageId: string }
   /** Layers live in the document's Y.Doc; the caller supplies whether the layer is owner-only. */
@@ -51,11 +54,13 @@ export type ActionFor<R extends Resource> = R extends { type: "workspace" }
   ? WorkspaceAction
   : R extends { type: "folder" }
     ? FolderAction
-    : R extends { type: "document" }
-      ? DocumentAction
-      : R extends { type: "page" }
-        ? PageAction
-        : LayerAction;
+    : R extends { type: "smartFolder" }
+      ? SmartFolderAction
+      : R extends { type: "document" }
+        ? DocumentAction
+        : R extends { type: "page" }
+          ? PageAction
+          : LayerAction;
 
 export const actorId = (actor: Actor) => (actor.kind === "user" ? actor.userId : actor.guestId);
 
@@ -152,6 +157,14 @@ export async function can<R extends Resource>(
       if (!folder) return deny("not_found");
       const facts = await workspaceFacts(c, folder.workspaceId, ctx.actor);
       return facts ? decideFolder(facts, action as FolderAction) : deny("not_found");
+    }
+    case "smartFolder": {
+      const smart = await c.smartFolders.findOne({ _id: resource.smartFolderId });
+      if (!smart) return deny("not_found");
+      const facts = await workspaceFacts(c, smart.workspaceId, ctx.actor);
+      if (!facts) return deny("not_found");
+      const isOwner = ctx.actor.kind === "user" && ctx.actor.userId === smart.userId;
+      return decideSmartFolder({ ...facts, isOwner });
     }
     case "document": {
       const document = await c.documents.findOne({ _id: resource.documentId });

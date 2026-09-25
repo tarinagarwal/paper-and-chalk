@@ -2,8 +2,8 @@
 
 Realtime, collaborative ink for PDFs, notebooks and infinite whiteboards, in the browser.
 
-> Early development. Every service runs; the marketing site, the app shell, sign-in, the data
-> model and file uploads are in place. The editor comes next.
+> Early development. Every service runs; the marketing site, sign-in, the data model, file
+> uploads and the document library are in place. Document creation and the editor come next.
 
 ## Stack
 
@@ -60,7 +60,7 @@ Fill in `.env` (MongoDB, Upstash, S3, auth and SMTP values; see the comments in 
 | `pnpm test`          | Vitest across the workspace (needs S3 access)             |
 | `pnpm build`         | Production builds                                         |
 | `pnpm db:migrate`    | Apply database migrations                                 |
-| `pnpm db:seed`       | Demo data (`--reset` to recreate, `--remove` to delete)   |
+| `pnpm db:seed`       | Demo data (`--reset`, `--remove`, `--bulk <count>`)       |
 
 End-to-end tests (Playwright, against a production build; they start a test MongoDB and the
 workers too):
@@ -70,6 +70,28 @@ pnpm --filter @pc/web build
 pnpm --filter @pc/web exec playwright install chromium   # first time only
 pnpm --filter @pc/web e2e
 ```
+
+## Library
+
+The library (`/app`) lists a workspace's documents in a grid or a list, both virtualized, and
+pages through them with keyset cursors on indexed sorts, so a workspace with 10,000 documents
+opens and re-sorts in well under a second.
+
+- **Views:** Home (the whole workspace), folders (nested, coloured, with icons, reordered and
+  nested by dragging), tags, smart folders (saved filters, private to their owner), Recents and
+  Favourites (per user, across workspaces), Shared with me, Trash, and title search (typo-tolerant
+  trigram matching, from the top bar: `/` or ⌘K).
+- **Sort and filter:** last modified, date created, name (numbers in numeric order), size, last
+  opened; filter by type, owner, tag and sharing. The URL holds the view, so it survives a reload.
+- **Actions:** rename in place, duplicate, move (dialog or drag onto a sidebar folder), tag,
+  favourite, trash, restore, delete forever. Select with click, shift and ⌘/Ctrl-click, a box drawn
+  with the mouse, or the keyboard (arrows, Enter, F2, Delete, ⌘A). Changes show at once and roll
+  back if the server refuses.
+- **Trash:** deleted documents and folders are purged after 30 days, with their files, by a
+  scheduled worker job (EventBridge Scheduler to SQS, daily). Locally:
+  `curl -X POST localhost:8081/jobs/purgeTrash -d '{}'`.
+
+Every read and write goes through the permission-checked repositories in `packages/db`.
 
 ## File storage
 

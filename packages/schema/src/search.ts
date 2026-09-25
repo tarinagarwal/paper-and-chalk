@@ -13,6 +13,21 @@ export function normaliseForSearch(text: string): string {
     .trim();
 }
 
+/**
+ * The key documents are sorted by name with: lowercase, accents removed, and runs of digits
+ * zero-padded so numbers sort by value ("lecture 9" before "lecture 10"). Plain byte order on this
+ * key is the library's name order, so MongoDB needs no collation (which could not also order ids).
+ */
+export function titleSortKey(title: string): string {
+  return title
+    .normalize("NFKD")
+    .replace(/\p{M}/gu, "")
+    .toLowerCase()
+    .trim()
+    .replace(/\d+/g, (digits) => digits.replace(/^0+(?=\d)/, "").padStart(12, "0"))
+    .slice(0, 400);
+}
+
 /** Distinct trigrams of each word, padded like pg_trgm ("  c", " ca", "cat", "at "). */
 export function trigrams(text: string): string[] {
   const grams = new Set<string>();

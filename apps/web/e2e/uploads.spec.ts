@@ -1,172 +1,147 @@
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 
-import AxeBuilder from "@axe-core/playwright";
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type APIRequestContext } from "@playwright/test";
 
 import { AUTH_STATE } from "../playwright.config";
+import { personalWorkspaceId } from "./library-helpers";
 
-/** A small real PDF with random bytes after the header, so every run hashes differently. */
-const pdf = (name = "notes.pdf") => ({
-  name,
-  mimeType: "application/pdf",
-  buffer: Buffer.concat([Buffer.from("%PDF-1.7\n"), randomBytes(4096)]),
-});
+/**
+ * The upload API end to end, against the real dev buckets (keys under test/e2e/) and the local
+ * workers. The browser side (hashing worker, tray, pause and resume) is unit-tested in
+ * src/lib/upload; its end-to-end test returns with the import flow that uploads from the library.
+ */
 
-/** Big enough to go up in 8 MB parts. */
-const video = (name: string) => {
-  const buffer = randomBytes(17 * 1024 * 1024);
-  Buffer.from([0, 0, 0, 0x18, ...Buffer.from("ftypisom")]).copy(buffer);
-  return { name, mimeType: "video/mp4", buffer };
+const sha256 = (bytes: Buffer) => createHash("sha256").update(bytes).digest("hex");
+const pdf = () => Buffer.concat([Buffer.from("%PDF-1.7\n"), randomBytes(4096)]);
+/** Big enough to go up in 8 MB parts (3 of them). */
+const video = () => {
+  const bytes = randomBytes(17 * 1024 * 1024);
+  Buffer.from([0, 0, 0, 0x18, ...Buffer.from("ftypisom")]).copy(bytes);
+  return bytes;
 };
 
-const row = (page: Page, name: string) =>
-  page.getByTestId("upload-tray").getByTestId("upload-row").filter({ hasText: name }).last();
-
-/** Slows uploads so pause and cancel can be pressed mid-flight. */
-async function throttleUploads(page: Page, bytesPerSecond: number) {
-  const cdp = await page.context().newCDPSession(page);
-  await cdp.send("Network.enable");
-  await cdp.send("Network.emulateNetworkConditions", {
-    offline: false,
-    latency: 0,
-    downloadThroughput: -1,
-    uploadThroughput: bytesPerSecond,
-  });
-  return () =>
-    cdp.send("Network.emulateNetworkConditions", {
-      offline: false,
-      latency: 0,
-      downloadThroughput: -1,
-      uploadThroughput: -1,
-    });
+interface Signed {
+  url: string;
+  method: string;
+  headers: Record<string, string>;
 }
 
-test.describe("uploads (dev page)", () => {
+async function init(
+  request: APIRequestContext,
+  workspaceId: string,
+  fileName: string,
+  contentType: string,
+  bytes: Buffer,
+) {
+  const response = await request.post("/api/uploads/init", {
+    data: { workspaceId, fileName, contentType, size: bytes.length, sha256: sha256(bytes) },
+  });
+  return { status: response.status(), body: (await response.json()) as Record<string, unknown> };
+}
+
+async function put(request: APIRequestContext, signed: Signed, body: Buffer) {
+  const response = await request.fetch(signed.url, {
+    method: signed.method,
+    headers: signed.headers,
+    data: body,
+  });
+  expect(response.status(), await response.text()).toBe(200);
+}
+
+async function waitForStatus(request: APIRequestContext, assetId: string, status: string) {
+  await expect
+    .poll(
+      async () => {
+        const response = await request.get(`/api/assets/${assetId}`);
+        return ((await response.json()) as { asset: { status: string } }).asset.status;
+      },
+      { timeout: 60_000, intervals: [500, 1000] },
+    )
+    .toBe(status);
+}
+
+test.describe("uploads (API, real S3)", () => {
   test.use({ storageState: AUTH_STATE });
   test.setTimeout(120_000);
 
-  test.beforeEach(async ({ page }) => {
-    await page.goto("/app/dev/upload");
-    await expect(page.getByRole("heading", { name: "Upload test", level: 1 })).toBeVisible();
-  });
-
-  test("uploads a PDF to S3, verifies it, opens and downloads it, and dedupes a second copy", async ({
-    page,
+  test("uploads a PDF with one signed PUT, verifies it, reads it back and dedupes a copy", async ({
     request,
   }) => {
+    const workspaceId = await personalWorkspaceId();
     const file = pdf();
-    await page.getByTestId("upload-input").setInputFiles(file);
-    await expect(row(page, file.name)).toHaveAttribute("data-state", "done", { timeout: 60_000 });
-    await expect(row(page, file.name).getByTestId("upload-status")).toContainText("Uploaded");
+    const started = await init(request, workspaceId, "notes.pdf", "application/pdf", file);
+    expect(started.status).toBe(200);
+    expect(started.body).toMatchObject({ status: "upload", mode: "single" });
+    await put(request, started.body.request as Signed, file);
 
-    const uploaded = page
-      .getByTestId("uploaded-list")
-      .getByRole("listitem")
-      .filter({ hasText: file.name });
-    await expect(uploaded).toContainText("ready");
-    // The tray sits over the bottom of the page; close it as a person would.
-    await page.getByRole("button", { name: "Close uploads" }).click();
-    await expect(page.getByTestId("upload-tray")).toBeHidden();
+    const completed = await request.post(`/api/uploads/${String(started.body.uploadId)}/complete`);
+    expect(completed.status()).toBe(201);
+    const { asset } = (await completed.json()) as { asset: { id: string } };
+    await waitForStatus(request, asset.id, "ready");
 
-    // Open: a 15-minute signed S3 URL that serves the exact bytes.
-    await page.evaluate(() => {
-      (window as Window & { opened?: string }).opened = "";
-      window.open = (url) => {
-        (window as Window & { opened?: string }).opened = String(url);
-        return null;
-      };
-    });
-    await uploaded.getByRole("button", { name: "Open" }).click();
-    await expect
-      .poll(() => page.evaluate(() => (window as Window & { opened?: string }).opened))
-      .toMatch(/amazonaws\.com\/.*X-Amz-Expires=900/);
-    const url = await page.evaluate(() => (window as Window & { opened?: string }).opened ?? "");
-    const response = await request.get(url);
-    expect(response.status()).toBe(200);
-    expect(Buffer.compare(await response.body(), file.buffer)).toBe(0);
+    const link = (await (await request.get(`/api/assets/${asset.id}/url`)).json()) as {
+      url: string;
+    };
+    expect(link.url).toMatch(/amazonaws\.com\/.*X-Amz-Expires=900/);
+    const read = await request.get(link.url);
+    expect(read.status()).toBe(200);
+    expect(Buffer.compare(await read.body(), file)).toBe(0);
 
-    const download = page.waitForEvent("download");
-    await uploaded.getByRole("button", { name: "Download" }).click();
-    expect((await download).suggestedFilename()).toBe(file.name);
-
-    // The same bytes again: nothing is uploaded, the existing file is reused.
-    await page.getByTestId("upload-input").setInputFiles({ ...file, name: "copy.pdf" });
-    await expect(row(page, "copy.pdf").getByTestId("upload-status")).toHaveText(
-      "Already in this workspace",
-      { timeout: 30_000 },
-    );
+    const again = await init(request, workspaceId, "copy.pdf", "application/pdf", file);
+    expect(again.body).toMatchObject({ status: "exists", asset: { id: asset.id } });
   });
 
-  test("rejects a file whose contents are not what its type says", async ({ page }) => {
-    await page.getByTestId("upload-input").setInputFiles({
-      name: "not-really.pdf",
-      mimeType: "application/pdf",
-      buffer: Buffer.from(`<html><script>alert(1)</script>${randomBytes(64).toString("hex")}`),
-    });
-    await expect(row(page, "not-really.pdf")).toHaveAttribute("data-state", "failed", {
-      timeout: 60_000,
-    });
-    await expect(row(page, "not-really.pdf").getByTestId("upload-status")).toContainText(
-      "don't match its type",
-    );
+  test("rejects a file whose contents are not what its type says", async ({ request }) => {
+    const workspaceId = await personalWorkspaceId();
+    const fake = Buffer.from(`<html><script>alert(1)</script>${randomBytes(64).toString("hex")}`);
+    const started = await init(request, workspaceId, "not-really.pdf", "application/pdf", fake);
+    await put(request, started.body.request as Signed, fake);
+    const completed = await request.post(`/api/uploads/${String(started.body.uploadId)}/complete`);
+    const { asset } = (await completed.json()) as { asset: { id: string } };
+    await waitForStatus(request, asset.id, "rejected");
+    expect((await request.get(`/api/assets/${asset.id}/url`)).status()).toBe(410);
   });
 
-  test("refuses unsupported files before uploading", async ({ page }) => {
-    await page.getByTestId("upload-input").setInputFiles({
-      name: "drawing.svg",
-      mimeType: "image/svg+xml",
-      buffer: Buffer.from("<svg xmlns='http://www.w3.org/2000/svg'/>"),
-    });
-    await expect(row(page, "drawing.svg").getByTestId("upload-status")).toHaveText(
-      "This type of file can't be uploaded.",
-    );
+  test("refuses unsupported types before anything is uploaded", async ({ request }) => {
+    const workspaceId = await personalWorkspaceId();
+    const svg = Buffer.from("<svg xmlns='http://www.w3.org/2000/svg'/>");
+    const started = await init(request, workspaceId, "drawing.svg", "image/svg+xml", svg);
+    expect(started.status).toBe(400);
   });
 
-  test("pauses and resumes a multipart upload without starting over", async ({ page }) => {
-    const unthrottle = await throttleUploads(page, 1024 * 1024);
-    const file = video("lecture.mp4");
-    await page.getByTestId("upload-input").setInputFiles(file);
-    const item = row(page, file.name);
-    await expect(item.getByTestId("upload-status")).toContainText("Uploading", { timeout: 30_000 });
-    await expect(item.getByTestId("upload-status")).not.toContainText("Uploading 0 bytes", {
-      timeout: 30_000,
-    });
+  test("resumes a multipart upload where it stopped, and aborts one", async ({ request }) => {
+    const workspaceId = await personalWorkspaceId();
+    const file = video();
+    const first = await init(request, workspaceId, "lecture.mp4", "video/mp4", file);
+    expect(first.body).toMatchObject({ status: "upload", mode: "multipart", partCount: 3 });
+    const partSize = first.body.partSize as number;
+    const parts = first.body.parts as { partNumber: number; request: Signed }[];
+    const slice = (n: number) =>
+      file.subarray((n - 1) * partSize, Math.min(n * partSize, file.length));
+    // Only the first part goes up, then the "tab closes".
+    const one = parts.find((p) => p.partNumber === 1);
+    if (!one) throw new Error("no part 1");
+    await put(request, one.request, slice(1));
+    const early = await request.post(`/api/uploads/${String(first.body.uploadId)}/complete`);
+    expect(early.status()).toBe(409);
 
-    await item.getByRole("button", { name: `Pause ${file.name}` }).click();
-    await expect(item).toHaveAttribute("data-state", "paused");
-    await expect(item.getByTestId("upload-status")).toContainText("Paused at");
+    // Picking the same file again resumes: part 1 is already there.
+    const resumed = await init(request, workspaceId, "lecture.mp4", "video/mp4", file);
+    expect(resumed.body).toMatchObject({ uploadId: first.body.uploadId, completedParts: [1] });
+    for (const part of resumed.body.parts as { partNumber: number; request: Signed }[]) {
+      await put(request, part.request, slice(part.partNumber));
+    }
+    const completed = await request.post(`/api/uploads/${String(first.body.uploadId)}/complete`);
+    expect(completed.status()).toBe(201);
+    const { asset } = (await completed.json()) as { asset: { id: string } };
+    await waitForStatus(request, asset.id, "ready");
 
-    await unthrottle();
-    await item.getByRole("button", { name: `Resume ${file.name}` }).click();
-    await expect(item).toHaveAttribute("data-state", "done", { timeout: 90_000 });
-  });
-
-  test("cancels an upload", async ({ page }) => {
-    await throttleUploads(page, 512 * 1024);
-    const file = video("cancel-me.mp4");
-    await page.getByTestId("upload-input").setInputFiles(file);
-    const item = row(page, file.name);
-    await expect(item.getByTestId("upload-status")).toContainText("Uploading", { timeout: 30_000 });
-    await item.getByRole("button", { name: `Cancel ${file.name}` }).click();
-    await expect(item).toHaveAttribute("data-state", "cancelled");
-    await item.getByRole("button", { name: `Dismiss ${file.name}` }).click();
-    await expect(item).toBeHidden();
-  });
-
-  test("the page and tray have no serious accessibility issues", async ({ page }) => {
-    await page.getByTestId("upload-input").setInputFiles({
-      name: "a11y.svg",
-      mimeType: "image/svg+xml",
-      buffer: Buffer.from("<svg/>"),
-    });
-    await expect(page.getByTestId("upload-tray")).toBeVisible();
-    const results = await new AxeBuilder({ page })
-      .withTags(["wcag2a", "wcag2aa", "wcag21aa", "wcag22aa"])
-      .analyze();
+    const other = video();
+    const cancelled = await init(request, workspaceId, "cancel-me.mp4", "video/mp4", other);
+    const aborted = await request.delete(`/api/uploads/${String(cancelled.body.uploadId)}`);
+    expect(aborted.ok()).toBe(true);
     expect(
-      results.violations
-        .filter((v) => v.impact === "serious" || v.impact === "critical")
-        .map((v) => v.id),
-    ).toEqual([]);
+      (await request.post(`/api/uploads/${String(cancelled.body.uploadId)}/complete`)).status(),
+    ).toBe(404);
   });
 });

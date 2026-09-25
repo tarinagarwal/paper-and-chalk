@@ -22,6 +22,7 @@ import type { AccessContext } from "../permissions/can";
 import { createRepositories } from "../repositories";
 import { deleteDocumentsCascade } from "../repositories/cascade";
 import { withTransaction } from "../transaction";
+import { seedBulkWorkspace } from "./bulk";
 
 export const SEED_ID = "demo";
 
@@ -49,6 +50,8 @@ export interface SeedSummary {
   workspaces: number;
   folders: number;
   documents: number;
+  /** Documents in the bulk workspace, when one was asked for. */
+  bulkDocuments: number;
   links: { label: string; token: string }[];
 }
 
@@ -107,7 +110,7 @@ async function ensureUser(
 /** Seeds the demo data. Returns null when it is already there (remove it first to reseed). */
 export async function seedDemo(
   conn: MongoConnection,
-  options: { now?: Date } = {},
+  options: { now?: Date; bulk?: number } = {},
 ): Promise<SeedSummary | null> {
   const c = typedCollections(conn.db);
   const manifests = conn.db.collection<SeedManifest>(collections.seed);
@@ -366,14 +369,28 @@ export async function seedDemo(
     at(2);
     await repos.documents.trash(ctx(tarin), scratch);
 
+    // A big workspace for performance checks (`--bulk <count>`). Removal takes everything in it.
+    let bulkDocuments = 0;
+    if (options.bulk && options.bulk > 0) {
+      const bulk = await seedBulkWorkspace(conn, {
+        ownerId: tarin.id,
+        ownerEmail: tarin.email,
+        count: options.bulk,
+        now: today,
+      });
+      manifest.workspaces.push(bulk.workspaceId);
+      bulkDocuments = bulk.documents;
+    }
+
     return {
       users: [
         { email: tarin.email, id: tarin.id, created: ownerUser.created },
         { email: maya.email, id: maya.id, created: secondUser.created },
       ],
-      workspaces: 3,
+      workspaces: bulkDocuments > 0 ? 4 : 3,
       folders: manifest.folders.length,
       documents: manifest.documents.length,
+      bulkDocuments,
       links: [
         { label: "viewer, downloads off", token: open.token },
         { label: "commenter, sign-in required", token: signedIn.token },

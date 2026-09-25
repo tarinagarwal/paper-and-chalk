@@ -28,7 +28,10 @@ function dispatchOverHttp(message: JobMessage): void {
     try {
       const response = await fetch(new URL(`/jobs/${message.kind}`, env.WORKERS_URL), {
         method: "POST",
-        headers: { "Content-Type": "application/json", "X-PC-Job-Id": message.jobId },
+        headers: {
+          "Content-Type": "application/json",
+          ...(message.jobId ? { "X-PC-Job-Id": message.jobId } : {}),
+        },
         body: JSON.stringify(message.payload),
         signal: AbortSignal.timeout(DISPATCH_TIMEOUT_MS),
       });

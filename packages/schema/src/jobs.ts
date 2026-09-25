@@ -15,10 +15,21 @@ export const verifyAssetJobSchema = z.strictObject({
 });
 export type VerifyAssetJob = z.infer<typeof verifyAssetJobSchema>;
 
+/**
+ * Deletes documents and folders that have been in the trash longer than the retention period,
+ * with their files. Runs daily on a schedule (EventBridge Scheduler -> SQS).
+ */
+export const purgeTrashJobSchema = z.strictObject({
+  /** Defaults to TRASH_RETENTION_DAYS. */
+  retentionDays: z.int().min(1).max(365).optional(),
+});
+export type PurgeTrashJob = z.infer<typeof purgeTrashJobSchema>;
+
 /** Every job kind and its payload schema. Add new kinds here. */
 export const jobPayloadSchemas = {
   ping: pingJobSchema,
   verifyAsset: verifyAssetJobSchema,
+  purgeTrash: purgeTrashJobSchema,
 } as const;
 
 export type JobKind = keyof typeof jobPayloadSchemas;
@@ -32,10 +43,11 @@ export function isJobKind(value: string): value is JobKind {
 
 /**
  * A job on a queue (SQS in deployed environments): the job record's id, its kind and payload.
- * The payload is checked against its kind's schema by the worker.
+ * The payload is checked against its kind's schema by the worker. Scheduled jobs have no job
+ * record (`jobId: null`); their runs show up in the logs.
  */
 export const jobMessageSchema = z.strictObject({
-  jobId: z.uuid(),
+  jobId: z.uuid().nullable(),
   kind: jobKindSchema,
   payload: z.unknown(),
 });
