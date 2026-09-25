@@ -6,6 +6,7 @@ import { MoreHorizontal, Star, Users } from "lucide-react";
 import { useEffect, useRef } from "react";
 
 import { Button } from "@/components/ui/button";
+import { useHydrated } from "@/hooks/use-hydrated";
 import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from "@/components/ui/context-menu";
 import {
   DropdownMenu,
@@ -143,15 +144,20 @@ function MoreButton(props: DocumentItemProps & { className?: string }) {
   );
 }
 
-function detailLine(item: LibraryDocument, scope: LibraryScope) {
-  if (scope.kind === "trash" && item.deletedAt) return trashCountdown(item.deletedAt);
-  return `${TYPE_LABELS[item.type]} · ${formatShortDate(item.updatedAt)}`;
+/** Dates depend on the viewer's time zone, so they appear once the page has hydrated. */
+function detailLine(item: LibraryDocument, scope: LibraryScope, hydrated: boolean) {
+  if (scope.kind === "trash" && item.deletedAt) {
+    return hydrated ? trashCountdown(item.deletedAt) : "In the trash";
+  }
+  const type = TYPE_LABELS[item.type];
+  return hydrated ? `${type} · ${formatShortDate(item.updatedAt)}` : type;
 }
 
 /** A card in the grid view. */
 export function DocumentCard(props: DocumentItemProps) {
   const { item, selected, tabbable, renaming, scope } = props;
   const { setNodeRef, listeners, isDragging } = useItemDrag(props);
+  const hydrated = useHydrated();
   return (
     <ContextMenu modal={false}>
       <ContextMenuTrigger asChild>
@@ -214,7 +220,7 @@ export function DocumentCard(props: DocumentItemProps) {
               )}
               <p
                 className="mt-0.5 flex min-w-0 items-center gap-1.5 truncate text-xs text-muted-foreground group-aria-selected:text-foreground/75"
-                title={formatLongDate(item.updatedAt)}
+                title={hydrated ? formatLongDate(item.updatedAt) : undefined}
               >
                 {item.tags.slice(0, 3).map((tag) => (
                   <span
@@ -224,7 +230,7 @@ export function DocumentCard(props: DocumentItemProps) {
                     style={{ background: tag.color }}
                   />
                 ))}
-                <span className="truncate">{detailLine(item, scope)}</span>
+                <span className="truncate">{detailLine(item, scope, hydrated)}</span>
               </p>
             </div>
             <MoreButton
@@ -250,6 +256,7 @@ export function DocumentCard(props: DocumentItemProps) {
 export function DocumentRow(props: DocumentItemProps) {
   const { item, selected, tabbable, renaming, scope } = props;
   const { setNodeRef, listeners, isDragging } = useItemDrag(props);
+  const hydrated = useHydrated();
   const when = scope.kind === "trash" && item.deletedAt ? item.deletedAt : item.updatedAt;
   return (
     <ContextMenu modal={false}>
@@ -344,12 +351,14 @@ export function DocumentRow(props: DocumentItemProps) {
             role="gridcell"
             className="w-24 text-right text-muted-foreground tabular-nums"
             title={
-              scope.kind === "trash" && item.deletedAt
-                ? trashCountdown(item.deletedAt)
-                : formatLongDate(when)
+              !hydrated
+                ? undefined
+                : scope.kind === "trash" && item.deletedAt
+                  ? trashCountdown(item.deletedAt)
+                  : formatLongDate(when)
             }
           >
-            {formatShortDate(when)}
+            {hydrated ? formatShortDate(when) : null}
           </div>
           <div role="gridcell" className="flex w-8 justify-end">
             <MoreButton {...props} />

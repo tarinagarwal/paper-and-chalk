@@ -4,7 +4,9 @@ import { expect, test, type Page } from "@playwright/test";
 import { AUTH_STATE } from "../playwright.config";
 import {
   card,
+  count,
   drag,
+  grid,
   openWorkspace,
   seedBigWorkspace,
   seedWorkspace,
@@ -50,13 +52,23 @@ test.describe("library", () => {
   test.use({ storageState: AUTH_STATE });
   test.setTimeout(90_000);
 
+  // Any uncaught error fails the test: hydration mismatches (React #418) included.
+  let pageErrors: string[] = [];
+  test.beforeEach(({ page }) => {
+    pageErrors = [];
+    page.on("pageerror", (error) => pageErrors.push(error.message));
+  });
+  test.afterEach(() => {
+    expect(pageErrors).toEqual([]);
+  });
+
   test("browses, sorts, filters, switches views and searches titles", async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     const seeded = await seedWorkspace(unique("Browse"), SPEC);
     await openWorkspace(page, seeded.workspaceId);
 
     await expect(page.getByRole("heading", { name: "Home", level: 1 })).toBeVisible();
-    await expect(page.getByTestId("library-count")).toHaveText("6 documents");
+    await expect(count(page)).toHaveText("6 documents");
     // Newest first by default.
     expect((await titles(page))[0]).toBe("Weekly notes");
 
@@ -78,34 +90,34 @@ test.describe("library", () => {
 
     await page.getByTestId("filters-button").click();
     await page.getByTestId("filters-panel").getByLabel("PDF").check();
-    await expect(page.getByTestId("library-count")).toHaveText("2 documents");
+    await expect(count(page)).toHaveText("2 documents");
     await page.getByTestId("filters-panel").getByLabel("Exam").check();
-    await expect(page.getByTestId("library-count")).toHaveText("1 document");
+    await expect(count(page)).toHaveText("1 document");
     await expect(page).toHaveURL(/types=pdf/);
     // The URL keeps the view: a reload shows the same thing.
     await page.reload();
-    await expect(page.getByTestId("library-count")).toHaveText("1 document");
+    await expect(count(page)).toHaveText("1 document");
     await expect(card(page, "Organic reactions")).toBeVisible();
     await page.keyboard.press("Escape");
     await page.getByTestId("filters-button").click();
     await page.getByTestId("filters-panel").getByRole("button", { name: "Clear filters" }).click();
-    await expect(page.getByTestId("library-count")).toHaveText("6 documents");
+    await expect(count(page)).toHaveText("6 documents");
     await page.keyboard.press("Escape");
 
     await page.getByRole("radio", { name: "List view" }).click();
-    await expect(page.getByTestId("library-grid")).toHaveAttribute("data-view", "list");
+    await expect(grid(page)).toHaveAttribute("data-view", "list");
     await expect(page.getByRole("row").filter({ hasText: "Organic reactions" })).toContainText(
       "PDF",
     );
     // The choice is remembered.
     await page.reload();
-    await expect(page.getByTestId("library-grid")).toHaveAttribute("data-view", "list");
+    await expect(grid(page)).toHaveAttribute("data-view", "list");
     await page.getByRole("radio", { name: "Grid view" }).click();
 
     // Folders open from the sidebar and show their subfolders.
     await page.getByTestId("folder-tree").getByRole("link", { name: "Biology" }).click();
     await expect(page.getByRole("heading", { name: "Biology", level: 1 })).toBeVisible();
-    await expect(page.getByTestId("library-count")).toHaveText("2 documents");
+    await expect(count(page)).toHaveText("2 documents");
     await expect(
       page.getByRole("list", { name: "Subfolders" }).getByRole("link", { name: "Genetics" }),
     ).toBeVisible();
@@ -148,7 +160,7 @@ test.describe("library", () => {
     );
     await expect(toast(page, "Moved 1 document to Chemistry")).toBeVisible();
     await page.getByTestId("folder-tree").getByRole("link", { name: "Chemistry" }).click();
-    await expect(page.getByTestId("library-count")).toHaveText("3 documents");
+    await expect(count(page)).toHaveText("3 documents");
     await expect(card(page, "Past paper 2025")).toBeVisible();
     await expect(card(page, "Mind map")).toBeVisible();
 
@@ -181,16 +193,16 @@ test.describe("library", () => {
     await card(page, "Past paper 2025").click({ modifiers: ["Shift"] });
     await page.keyboard.press("Delete");
     await expect(toast(page, "Moved 2 documents to the trash")).toBeVisible();
-    await expect(page.getByTestId("library-count")).toHaveText("4 documents");
+    await expect(count(page)).toHaveText("4 documents");
 
     await page.getByTestId("nav-trash").click();
     await expect(page.getByRole("heading", { name: "Trash", level: 1 })).toBeVisible();
-    await expect(page.getByTestId("library-count")).toHaveText("2 documents");
+    await expect(count(page)).toHaveText("2 documents");
     await expect(card(page, "Weekly notes")).toContainText("Deleted forever in 30 days");
 
     await card(page, "Weekly notes").click({ button: "right" });
     await page.getByRole("menuitem", { name: "Restore" }).click();
-    await expect(page.getByTestId("library-count")).toHaveText("1 document");
+    await expect(count(page)).toHaveText("1 document");
 
     await card(page, "Past paper 2025").click();
     await page.keyboard.press("Delete");
@@ -199,7 +211,7 @@ test.describe("library", () => {
     await expect(page.getByTestId("library-empty")).toContainText("The trash is empty");
 
     await page.getByRole("link", { name: "Home" }).first().click();
-    await expect(page.getByTestId("library-count")).toHaveText("5 documents");
+    await expect(count(page)).toHaveText("5 documents");
   });
 
   test("box-selects with the mouse and moves the selection by dragging", async ({ page }) => {
@@ -208,8 +220,8 @@ test.describe("library", () => {
     await openWorkspace(page, seeded.workspaceId);
 
     // Drag a box from the empty space right of the last card up over the first row.
-    const grid = page.getByTestId("library-grid");
-    const box = await grid.boundingBox();
+    const view = grid(page);
+    const box = await view.boundingBox();
     const first = await card(page, "Weekly notes").boundingBox();
     const third = await card(page, "Organic reactions").boundingBox();
     if (!box || !first || !third) throw new Error("layout");
@@ -219,16 +231,13 @@ test.describe("library", () => {
     await page.mouse.down();
     await page.mouse.move(third.x + third.width / 2, first.y + 20, { steps: 10 });
     await page.mouse.up();
-    const selected = await page
-      .getByTestId("library-grid")
-      .locator('[aria-selected="true"]')
-      .count();
+    const selected = await view.locator('[aria-selected="true"]').count();
     expect(selected).toBeGreaterThanOrEqual(2);
     await expect(page.getByTestId("selection-bar")).toContainText("selected");
 
     await drag(
       page,
-      grid.locator('[aria-selected="true"]').first(),
+      view.locator('[aria-selected="true"]').first(),
       page.getByTestId("folder-tree").getByRole("link", { name: "Biology" }),
     );
     await expect(toast(page, `Moved ${String(selected)} documents to Biology`)).toBeVisible();
@@ -236,15 +245,27 @@ test.describe("library", () => {
 
   test("favourites, recents, tags and smart folders", async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
-    const seeded = await seedWorkspace(unique("Views"), SPEC);
+    // Favourites and Recents span every workspace of the shared test user: unique titles.
+    const mindMap = unique("Mind map");
+    const lecture = unique("Lecture 9");
+    const seeded = await seedWorkspace(unique("Views"), {
+      ...SPEC,
+      docs: SPEC.docs.map((d) =>
+        d.title === "Mind map"
+          ? { ...d, title: mindMap }
+          : d.title === "Lecture 9"
+            ? { ...d, title: lecture }
+            : d,
+      ),
+    });
     await openWorkspace(page, seeded.workspaceId);
 
-    await card(page, "Mind map").click({ button: "right" });
+    await card(page, mindMap).click({ button: "right" });
     await page.getByRole("menuitem", { name: "Add to favourites" }).click();
     await expect(toast(page, "Added 1 document to favourites")).toBeVisible();
 
-    await card(page, "Lecture 9").dblclick();
-    await expect(toast(page, "Opening “Lecture 9”")).toBeVisible();
+    await card(page, lecture).dblclick();
+    await expect(toast(page, `Opening “${lecture}”`)).toBeVisible();
 
     await card(page, "Weekly notes").click({ button: "right" });
     await page.getByRole("menuitem", { name: "Tags" }).hover();
@@ -256,12 +277,12 @@ test.describe("library", () => {
     await expect(toast(page, `Tagged 1 document “${tagName}”`)).toBeVisible();
 
     await page.getByRole("link", { name: "Favourites" }).click();
-    await expect(card(page, "Mind map")).toBeVisible();
+    await expect(card(page, mindMap)).toBeVisible();
     await page.getByRole("link", { name: "Recents" }).click();
-    await expect(card(page, "Lecture 9")).toBeVisible();
+    await expect(card(page, lecture)).toBeVisible();
     await page.getByRole("list", { name: "Tags" }).getByRole("link", { name: tagName }).click();
     await expect(page.getByRole("heading", { name: tagName, level: 1 })).toBeVisible();
-    await expect(page.getByTestId("library-count")).toHaveText("1 document");
+    await expect(count(page)).toHaveText("1 document");
 
     // Smart folder: PDFs tagged Review.
     await page.getByRole("link", { name: "Home" }).first().click();
@@ -269,12 +290,12 @@ test.describe("library", () => {
     await page.getByTestId("filters-panel").getByLabel("PDF").check();
     await page.getByTestId("filters-panel").getByLabel("Review").check();
     await page.keyboard.press("Escape");
-    await expect(page.getByTestId("library-count")).toHaveText("2 documents");
+    await expect(count(page)).toHaveText("2 documents");
     await page.getByTestId("save-smart-folder").click();
     await page.getByTestId("smart-folder-dialog").getByLabel("Name").fill("PDFs to review");
     await page.getByTestId("smart-folder-submit").click();
     await expect(page.getByRole("heading", { name: "PDFs to review", level: 1 })).toBeVisible();
-    await expect(page.getByTestId("library-count")).toHaveText("2 documents");
+    await expect(count(page)).toHaveText("2 documents");
     await expect(
       page
         .getByRole("list", { name: "Smart folders" })
@@ -323,7 +344,7 @@ test.describe("library", () => {
     const workspaceId = await seedBigWorkspace(10_000);
     const started = Date.now();
     await openWorkspace(page, workspaceId);
-    await expect(page.getByTestId("library-count")).toHaveText("10,000 documents");
+    await expect(count(page)).toHaveText("10,000 documents");
     const firstPaint = Date.now() - started;
 
     // Scroll far: each page loads as the end comes into view, but only rows near the viewport are
@@ -348,7 +369,7 @@ test.describe("library", () => {
     await page.getByTestId("sort-button").click();
     await page.getByRole("menuitemradio", { name: "Size" }).click();
     await expect(page).toHaveURL(/sort=size/);
-    await expect(page.getByTestId("library-grid")).toHaveAttribute("aria-busy", "false");
+    await expect(grid(page)).toHaveAttribute("aria-busy", "false");
     const sortMs = Date.now() - sortStart;
     test.info().annotations.push({
       type: "performance",
@@ -395,5 +416,25 @@ test.describe("library", () => {
       .toBe(true);
     await page.getByTestId("sidebar-trigger").click();
     await expect(page.getByRole("dialog").getByRole("link", { name: "Biology" })).toBeVisible();
+  });
+
+  test.describe("in another time zone than the server", () => {
+    // UTC+12:45: no server runs here, so dates would differ if they were rendered on the server.
+    test.use({ timezoneId: "Pacific/Chatham" });
+
+    test("hydrates without mismatches and shows local dates", async ({ page }) => {
+      const seeded = await seedWorkspace(unique("Zone"), {
+        docs: [
+          { title: "Today", daysAgo: 0 },
+          { title: "Older", daysAgo: 40 },
+        ],
+      });
+      await openWorkspace(page, seeded.workspaceId);
+      await expect(card(page, "Older")).toContainText("Notebook ·");
+      await page.getByRole("radio", { name: "List view" }).click();
+      await page.reload();
+      await expect(grid(page)).toHaveAttribute("data-view", "list");
+      await page.getByRole("radio", { name: "Grid view" }).click();
+    });
   });
 });

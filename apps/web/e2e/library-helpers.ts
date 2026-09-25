@@ -109,16 +109,22 @@ export async function openWorkspace(page: Page, workspaceId: string, path = "/ap
     .addCookies([{ name: "pc_workspace", value: workspaceId, domain: "localhost", path: "/" }]);
   await page.goto(path);
   await expect(
-    page.getByTestId("library-grid").or(page.getByTestId("library-empty")),
+    grid(page).or(page.getByTestId("library-empty").filter({ visible: true })),
   ).toBeVisible();
 }
 
+/**
+ * Right after a load, React may still hold a hidden copy of the streamed page (`div#S:0[hidden]`)
+ * until it swaps it in, so library locators only match what is visible.
+ */
+export const grid = (page: Page) => page.getByTestId("library-grid").filter({ visible: true });
+export const count = (page: Page) => page.getByTestId("library-count").filter({ visible: true });
+
 export const card = (page: Page, title: string) =>
-  page.getByTestId("library-grid").getByRole("gridcell", { name: title, exact: true });
+  grid(page).getByRole("gridcell", { name: title, exact: true });
 
 export const titles = (page: Page) =>
-  page
-    .getByTestId("library-grid")
+  grid(page)
     .getByTestId("library-item")
     .evaluateAll((items) =>
       items.map(
