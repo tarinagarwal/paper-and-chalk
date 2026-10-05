@@ -1,7 +1,7 @@
 import type { UploadMime } from "@pc/schema";
 import { describe, expect, it } from "vitest";
 
-import { matchesDeclaredType } from "./file-types";
+import { matchesDeclaredType, sniffImportType } from "./file-types";
 
 const text = (s: string) => new TextEncoder().encode(s);
 const bytes = (...parts: (number[] | string)[]) =>
@@ -63,5 +63,15 @@ describe("matchesDeclaredType", () => {
   it("rejects empty and truncated files", () => {
     expect(matchesDeclaredType("image/png", new Uint8Array())).toBe(false);
     expect(matchesDeclaredType("image/png", bytes([0x89, 0x50]))).toBe(false);
+  });
+
+  it("tells which importable type a fetched file really is", () => {
+    const enc = (text: string) => new TextEncoder().encode(text);
+    expect(sniffImportType(enc("%PDF-1.4\nrest"))).toBe("application/pdf");
+    expect(
+      sniffImportType(new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0])),
+    ).toBe("image/png");
+    expect(sniffImportType(new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0, 0]))).toBe("image/jpeg");
+    expect(sniffImportType(enc("<html>not a pdf</html>"))).toBeNull();
   });
 });

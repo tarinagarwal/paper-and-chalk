@@ -4,7 +4,7 @@ import type { SQSBatchResponse, SQSEvent, SQSRecord } from "aws-lambda";
 import type { TaskMeta } from "./cloud-tasks";
 import { jobHandlers, type JobHandlers, type WorkerServices } from "./jobs";
 import { log } from "./log";
-import { executeJob, InvalidJobError } from "./run-job";
+import { executeJob, InvalidJobError, JobRefusedError } from "./run-job";
 
 function taskMeta(record: SQSRecord): TaskMeta {
   const received = Number(record.attributes.ApproximateReceiveCount) || 1;
@@ -48,7 +48,7 @@ export function createSqsHandler(
           handlers,
         });
       } catch (error) {
-        if (!(error instanceof InvalidJobError)) {
+        if (!(error instanceof InvalidJobError || error instanceof JobRefusedError)) {
           batchItemFailures.push({ itemIdentifier: record.messageId });
         }
       }

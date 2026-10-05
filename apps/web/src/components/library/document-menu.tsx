@@ -5,6 +5,7 @@ import {
   ArrowUpRight,
   Copy,
   FolderInput,
+  LayoutTemplate,
   PencilLine,
   Plus,
   RotateCcw,
@@ -44,6 +45,7 @@ export interface MenuHandlers {
   move: (targets: LibraryDocument[]) => void;
   purge: (targets: LibraryDocument[]) => void;
   newTag: (targets: LibraryDocument[]) => void;
+  saveTemplate: (item: LibraryDocument) => void;
 }
 
 type Kind = "context" | "dropdown";
@@ -227,6 +229,18 @@ export function DocumentMenuItems({
         <Item
           kind={kind}
           entry={{ label: "Duplicate", icon: Copy, onSelect: () => void actions.duplicate(single) }}
+        />
+      ) : null}
+      {single && (single.type === "notebook" || single.type === "canvas") ? (
+        <Item
+          kind={kind}
+          entry={{
+            label: "Save as template…",
+            icon: LayoutTemplate,
+            onSelect: () => {
+              handlers.saveTemplate(single);
+            },
+          }}
         />
       ) : null}
       {all("edit") && oneWorkspace ? (

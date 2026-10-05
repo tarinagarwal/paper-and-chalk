@@ -32,6 +32,10 @@ export {
   type UploadInitResult,
   type VerificationResult,
   type WorkspaceWithRole,
+  metaDocName,
+  readMetaDoc,
+  systemTemplateViews,
+  templateView,
 } from "./repositories";
-export { storageAccount, type StorageAccount } from "./repositories/quota";
+export { storageAccount, storageBreakdown, type StorageAccount } from "./repositories/quota";
 // Migrations live at "@pc/db/migrations" so app bundles never pull them in.

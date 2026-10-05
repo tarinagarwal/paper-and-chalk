@@ -3,7 +3,8 @@
 Realtime, collaborative ink for PDFs, notebooks and infinite whiteboards, in the browser.
 
 > Early development. Every service runs; the marketing site, sign-in, the data model, file
-> uploads and the document library are in place. Document creation and the editor come next.
+> uploads, the document library and document creation are in place. PDF processing and the
+> editor come next.
 
 ## Stack
 
@@ -25,7 +26,7 @@ apps/sync            Hocuspocus WebSocket server
 apps/workers         Background jobs (AWS Lambda from SQS; HTTP locally)
 infra                Terraform: environments, bucket module, bootstrap and secret scripts
 packages/schema      Shared zod schemas and types
-packages/engine      Canvas engine (framework-free)
+packages/engine      Canvas engine (framework-free); paper templates as vector draw commands
 packages/db          MongoDB client, migrations, permissions and repositories
 packages/storage     S3 client, signed URLs, file-type checks, AWS credentials
 packages/sync-token  Sync-server identity tokens (sign / verify)
@@ -90,6 +91,36 @@ opens and re-sorts in well under a second.
 - **Trash:** deleted documents and folders are purged after 30 days, with their files, by a
   scheduled worker job (EventBridge Scheduler to SQS, daily). Locally:
   `curl -X POST localhost:8081/jobs/purgeTrash -d '{}'`.
+- **Storage:** the sidebar meter shows use against the plan; its details split files in documents
+  from files no document uses and list the largest documents.
+
+Opening a document goes to `/app/d/<id>`, which shows its pages at their real proportions (the
+editor will take over this page).
+
+## New documents
+
+The **New** button (or dropping files anywhere on the library) opens a dialog with four tabs.
+Creating writes the document, its pages and its collaborative metadata in one transaction and
+opens it.
+
+- **Notebook:** size presets (ISO A0–A6, B0–B6, C4–C6, US Letter, Legal, Tabloid, Executive,
+  index card, slides, phone) or a custom size in mm, cm, in or px that can be saved; portrait or
+  landscape; 18 paper templates (blank, ruled college/wide/narrow, grid, dot grid, isometric,
+  hex, graph with axes, music staff, Cornell, daily/weekly/monthly planner, storyboard,
+  handwriting practice, engineering, calligraphy); paper and line colours with a dark paper
+  preset; spacing and margin; cover colour or image; starting page count. The preview updates as
+  you change anything.
+- **Infinite canvas:** background of dots, grid, lines or none, with spacing and colours.
+- **Import:** PDFs and images (JPG, PNG, WebP) from your device or a web address, in the order
+  you choose. Images become pages sized to the image or fitted on a paper size. PDF pages appear
+  once PDF processing exists; the document and its files are created straight away.
+- **Templates:** a gallery (lecture notes, planners, graph paper, music manuscript, storyboard,
+  whiteboard and more) plus your own: "Save as template" in a notebook's or board's menu keeps
+  its page setup.
+
+Page backgrounds are drawn by the canvas engine (`packages/engine`) from the page's settings as
+vector commands, so the dialog's preview and the created page are the same drawing, and PDF
+export will reuse it.
 
 Every read and write goes through the permission-checked repositories in `packages/db`.
 
@@ -112,6 +143,15 @@ storage quota. If the workspace already has a file with that hash it is reused. 
 A worker then checks the file's first bytes against its declared type (and re-hashes multipart
 uploads). Mismatches are deleted and refunded. `GET /api/assets/:id/url` returns a 15-minute
 signed read URL after a permission check.
+
+**From a web address.** The web app never fetches user URLs: a worker does. It accepts HTTPS
+only, checks every address the name resolves to (and every redirect) against private, loopback,
+link-local and cloud-metadata ranges, streams the file into S3 while hashing it, stops at the
+plan's size limit and checks the type from the first bytes.
+
+**Shared files.** A file is stored once per workspace (by hash), and documents refer to it:
+duplicating a document or importing the same file again costs no extra space. Deleting a
+document forever deletes a file, and refunds its quota, only when no other document uses it.
 
 **Buckets.** Five private buckets per environment (`originals`, `yjs-snapshots`, `assets`,
 `exports`, `thumbnails`), named by the `S3_BUCKET_*` variables and defined once in Terraform

@@ -2,6 +2,7 @@ import { createFileRepositories, createMongo, createRepositories } from "@pc/db"
 import { createStorage, storageConfigFromEnv } from "@pc/storage";
 
 import { env, port } from "./env";
+import { createUrlFetcher } from "./fetch-url";
 import { createWorkerServer } from "./server";
 
 const mongo = createMongo(env.MONGODB_URI, { appName: "paper-chalk-workers", maxPoolSize: 5 });
@@ -10,6 +11,8 @@ const server = createWorkerServer({
   services: {
     files: createFileRepositories(mongo, storage),
     jobs: createRepositories(mongo).jobs,
+    storage,
+    fetchUrl: createUrlFetcher(),
   },
 });
 

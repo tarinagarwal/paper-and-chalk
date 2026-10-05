@@ -164,3 +164,15 @@ export async function personalWorkspaceId(): Promise<string> {
     return workspace._id;
   });
 }
+
+/** A document row as stored, to check what the New dialog wrote. */
+export async function storedDocument(documentId: string) {
+  return withDb(async (conn) => {
+    const c = typedCollections(conn.db);
+    const document = await c.documents.findOne({ _id: documentId });
+    if (!document) throw new Error(`no document ${documentId}`);
+    const assets = await c.assets.find({ documentId }).toArray();
+    const meta = await c.yjsUpdates.countDocuments({ docName: `doc:${documentId}:meta` });
+    return { document, assets, meta };
+  });
+}

@@ -27,11 +27,17 @@ function record(id: string, body: unknown, received = 1): SQSRecord {
 
 function services(log: string[]): WorkerServices {
   return {
+    storage: { putStream: () => Promise.reject(new Error("not in this test")) },
+    fetchUrl: { fetch: () => Promise.reject(new Error("not in this test")) },
     files: {
       verification: { verify: () => Promise.resolve({ status: "ready" }) },
       trash: {
         purgeExpired: () =>
           Promise.resolve({ documents: 0, folders: 0, objectsRemoved: 0, objectsFailed: 0 }),
+      },
+      imports: {
+        registerFetched: () => Promise.reject(new Error("not in this test")),
+        keyFor: (workspaceId: string, assetId: string) => `ws/${workspaceId}/${assetId}`,
       },
     },
     jobs: {

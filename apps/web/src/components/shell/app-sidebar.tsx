@@ -53,7 +53,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Progress } from "@/components/ui/progress";
 import {
   Sidebar,
   SidebarContent,
@@ -69,12 +68,13 @@ import {
   SidebarMenuItem,
   SidebarRail,
 } from "@/components/ui/sidebar";
-import { useSidebarData, useStorageData } from "@/hooks/use-library-data";
+import { useSidebarData } from "@/hooks/use-library-data";
 import { useSidebarActions, type SidebarActions } from "@/hooks/use-sidebar-actions";
 import { libraryApi } from "@/lib/library/api";
 import { childrenOf } from "@/lib/library/folders";
-import { formatBytes } from "@/lib/library/format";
 import { cn } from "@/lib/utils";
+
+import { StorageMeter } from "./storage-meter";
 
 // ---------------------------------------------------------------------------------------------
 // workspace switcher
@@ -782,39 +782,6 @@ function TagsGroup({
         </AlertDialogContent>
       </AlertDialog>
     </SidebarGroup>
-  );
-}
-
-// ---------------------------------------------------------------------------------------------
-// storage
-
-function StorageMeter() {
-  const { data } = useStorageData();
-  if (!data) return null;
-  const percent = Math.min(100, Math.round((data.usedBytes / data.limitBytes) * 100));
-  return (
-    <div
-      className="flex flex-col gap-1.5 px-2 py-1 group-data-[collapsible=icon]:hidden"
-      data-testid="storage-meter"
-    >
-      <div className="flex items-baseline justify-between text-xs">
-        <span className="font-medium">Storage</span>
-        <span className="text-muted-foreground tabular-nums">
-          {formatBytes(data.usedBytes)} of {formatBytes(data.limitBytes)}
-        </span>
-      </div>
-      <Progress
-        value={percent}
-        aria-label={`Storage used: ${String(percent)}%`}
-        className="h-1.5"
-      />
-      <Link
-        href="/app?sort=size"
-        className="text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
-      >
-        See the largest documents
-      </Link>
-    </div>
   );
 }
 

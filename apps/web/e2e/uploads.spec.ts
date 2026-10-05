@@ -8,7 +8,7 @@ import { personalWorkspaceId } from "./library-helpers";
 /**
  * The upload API end to end, against the real dev buckets (keys under test/e2e/) and the local
  * workers. The browser side (hashing worker, tray, pause and resume) is unit-tested in
- * src/lib/upload; its end-to-end test returns with the import flow that uploads from the library.
+ * src/lib/upload and runs end to end through the Import tab in new-document.spec.ts.
  */
 
 const sha256 = (bytes: Buffer) => createHash("sha256").update(bytes).digest("hex");

@@ -26,3 +26,13 @@ export function useStorageData() {
     staleTime: 60_000,
   });
 }
+
+/** The meter's details, loaded when they are opened; refreshed with the meter. */
+export function useStorageBreakdown(enabled: boolean) {
+  return useQuery({
+    queryKey: [...libraryKeys.storage, "breakdown"],
+    queryFn: libraryApi.storageBreakdown,
+    enabled,
+    staleTime: 60_000,
+  });
+}

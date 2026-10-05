@@ -3,7 +3,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { BUCKETS } from "./config";
-import type { SignedRequest, Storage } from "./client";
+import { StreamTooLargeError, type SignedRequest, type Storage } from "./client";
 import { testStorage } from "./testing";
 
 const sha256 = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
@@ -148,6 +148,64 @@ describe("storage against the dev buckets", () => {
       expect((await send(signed, new Uint8Array(11))).status).toBe(403);
       await storage.abortMultipart({ bucket: "assets", key, uploadId });
       await storage.abortMultipart({ bucket: "assets", key, uploadId });
+    });
+  });
+
+  describe("streamed from the server", () => {
+    async function* chunks(bytes: Uint8Array, size = 1024 * 1024) {
+      for (let i = 0; i < bytes.length; i += size) {
+        yield bytes.subarray(i, Math.min(i + size, bytes.length));
+        await Promise.resolve();
+      }
+    }
+
+    it("stores a small body in one PUT and reports its hash and first bytes", async () => {
+      const body = new Uint8Array([
+        ...new TextEncoder().encode("%PDF-1.7\n"),
+        ...randomBytes(3000),
+      ]);
+      const key = storage.key("stream", "small.pdf");
+      written.push({ bucket: "originals", key });
+      const result = await storage.putStream({
+        bucket: "originals",
+        key,
+        contentType: "application/pdf",
+        body: chunks(body, 700),
+        maxBytes: 10_000,
+      });
+      expect(result).toMatchObject({ bytes: body.length, sha256Hex: sha256(body) });
+      expect(new TextDecoder().decode(result.head.subarray(0, 8))).toBe("%PDF-1.7");
+      expect((await storage.head("originals", key))?.size).toBe(body.length);
+    });
+
+    it("uses 8 MB parts for a large body", async () => {
+      const body = new Uint8Array(randomBytes(9 * 1024 * 1024 + 123));
+      const key = storage.key("stream", "large.bin");
+      written.push({ bucket: "assets", key });
+      const result = await storage.putStream({
+        bucket: "assets",
+        key,
+        contentType: "application/octet-stream",
+        body: chunks(body),
+        maxBytes: 20 * 1024 * 1024,
+      });
+      expect(result.sha256Hex).toBe(sha256(body));
+      expect((await storage.head("assets", key))?.size).toBe(body.length);
+    });
+
+    it("stops at the size limit and leaves nothing behind", async () => {
+      const body = new Uint8Array(randomBytes(9 * 1024 * 1024));
+      const key = storage.key("stream", "too-large.bin");
+      await expect(
+        storage.putStream({
+          bucket: "assets",
+          key,
+          contentType: "application/octet-stream",
+          body: chunks(body),
+          maxBytes: 8 * 1024 * 1024 + 10,
+        }),
+      ).rejects.toBeInstanceOf(StreamTooLargeError);
+      expect(await storage.head("assets", key)).toBeNull();
     });
   });
 

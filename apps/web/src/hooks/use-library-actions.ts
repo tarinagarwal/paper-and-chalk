@@ -246,19 +246,6 @@ export function useLibraryActions() {
       }
     },
 
-    /** Records the open (Recents). The editor comes later; until then a note says so. */
-    async open(item: LibraryDocument) {
-      try {
-        await libraryApi.open(item.id);
-        markStale();
-        toast(`Opening “${item.title}”`, {
-          description: "Documents open in the editor, which is on its way. Added to Recents.",
-        });
-      } catch (error) {
-        toast.error(`Couldn't open. ${messageOf(error)}`);
-      }
-    },
-
     /** A tag was renamed or recoloured: show it everywhere at once. */
     tagChanged(tag: TagView) {
       apply("all", { kind: "tagChanged", tag });

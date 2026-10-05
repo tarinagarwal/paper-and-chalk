@@ -33,6 +33,7 @@ describe("migrations", () => {
       "0002_core_collections",
       "0003_uploads",
       "0004_library",
+      "0005_new_documents",
     ]);
   });
 

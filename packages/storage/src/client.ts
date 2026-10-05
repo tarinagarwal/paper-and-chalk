@@ -18,6 +18,7 @@ import { createHash } from "node:crypto";
 import { Readable } from "node:stream";
 
 import type { Bucket, StorageConfig } from "./config";
+import { SNIFF_BYTES } from "./file-types";
 
 /** Signed read URLs live 15 minutes (SPEC.md section 27). */
 export const READ_URL_TTL_SECONDS = 15 * 60;
@@ -47,6 +48,14 @@ export interface UploadedPart {
 }
 
 const hexToBase64 = (hex: string) => Buffer.from(hex, "hex").toString("base64");
+
+/** A streamed body went over its size limit; nothing was kept. */
+export class StreamTooLargeError extends Error {
+  constructor(readonly maxBytes: number) {
+    super(`The file is larger than ${String(Math.round(maxBytes / 1024 / 1024))} MB`);
+    this.name = "StreamTooLargeError";
+  }
+}
 
 const isNotFound = (error: unknown) =>
   error instanceof S3ServiceException &&
@@ -240,6 +249,97 @@ export function createStorage(config: StorageConfig) {
         // Already finished or aborted: nothing left to clean up.
         if (!isNotFound(error)) throw error;
       }
+    },
+
+    /**
+     * Streams a body the server fetched (a URL import) into S3: one PUT when it fits in a part,
+     * 8 MB parts otherwise. Hashes as it goes and keeps the first bytes for type checks. Throws
+     * `StreamTooLargeError` (and leaves nothing behind) once `maxBytes` is passed.
+     */
+    async putStream(input: {
+      bucket: Bucket;
+      key: string;
+      contentType: string;
+      body: AsyncIterable<Uint8Array>;
+      maxBytes: number;
+    }): Promise<{ bytes: number; sha256Hex: string; head: Uint8Array }> {
+      const PART = 8 * 1024 * 1024;
+      const hash = createHash("sha256");
+      const head: number[] = [];
+      let bytes = 0;
+      let buffered: Uint8Array[] = [];
+      let bufferedBytes = 0;
+      // Set by flush() once the stream outgrows one part (an object, so the closure's write is seen).
+      const multipart: { uploadId: string | null } = { uploadId: null };
+      const parts: UploadedPart[] = [];
+      const target = { Bucket: name(input.bucket), Key: input.key };
+
+      const flush = async () => {
+        multipart.uploadId ??=
+          (
+            await s3.send(
+              new CreateMultipartUploadCommand({ ...target, ContentType: input.contentType }),
+            )
+          ).UploadId ?? null;
+        const uploadId = multipart.uploadId;
+        if (!uploadId) throw new Error("S3 returned no upload id");
+        const body = Buffer.concat(buffered);
+        const partNumber = parts.length + 1;
+        const result = await s3.send(
+          new UploadPartCommand({
+            ...target,
+            UploadId: uploadId,
+            PartNumber: partNumber,
+            Body: body,
+          }),
+        );
+        if (!result.ETag) throw new Error("S3 returned no part ETag");
+        parts.push({ partNumber, etag: result.ETag, size: body.length });
+        buffered = [];
+        bufferedBytes = 0;
+      };
+
+      try {
+        for await (const chunk of input.body) {
+          bytes += chunk.length;
+          if (bytes > input.maxBytes) throw new StreamTooLargeError(input.maxBytes);
+          hash.update(chunk);
+          for (let i = 0; head.length < SNIFF_BYTES && i < chunk.length; i++)
+            head.push(chunk[i] ?? 0);
+          buffered.push(chunk);
+          bufferedBytes += chunk.length;
+          if (bufferedBytes >= PART) await flush();
+        }
+        const uploadId = multipart.uploadId;
+        if (uploadId === null) {
+          await s3.send(
+            new PutObjectCommand({
+              ...target,
+              ContentType: input.contentType,
+              Body: Buffer.concat(buffered),
+            }),
+          );
+        } else {
+          if (bufferedBytes > 0) await flush();
+          await s3.send(
+            new CompleteMultipartUploadCommand({
+              ...target,
+              UploadId: uploadId,
+              MultipartUpload: {
+                Parts: parts.map((p) => ({ PartNumber: p.partNumber, ETag: p.etag })),
+              },
+            }),
+          );
+        }
+      } catch (error) {
+        if (multipart.uploadId !== null) {
+          await s3
+            .send(new AbortMultipartUploadCommand({ ...target, UploadId: multipart.uploadId }))
+            .catch(() => undefined);
+        }
+        throw error;
+      }
+      return { bytes, sha256Hex: hash.digest("hex"), head: Uint8Array.from(head) };
     },
 
     /** Object metadata, or null when it does not exist. */

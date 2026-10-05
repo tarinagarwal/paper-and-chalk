@@ -8,6 +8,7 @@ import { createStorage, storageConfigFromEnv, storageEnv } from "@pc/storage";
 import { createEnv } from "@t3-oss/env-core";
 import { z } from "zod";
 
+import { createUrlFetcher } from "./fetch-url";
 import type { WorkerServices } from "./jobs";
 import { createSqsHandler } from "./sqs";
 
@@ -33,7 +34,12 @@ async function createServices(): Promise<WorkerServices> {
   // Small pool: each Lambda container handles one batch at a time.
   const mongo = createMongo(uri, { appName: "paper-chalk-workers", maxPoolSize: 2 });
   const storage = createStorage(storageConfigFromEnv(env));
-  return { files: createFileRepositories(mongo, storage), jobs: createRepositories(mongo).jobs };
+  return {
+    files: createFileRepositories(mongo, storage),
+    jobs: createRepositories(mongo).jobs,
+    storage,
+    fetchUrl: createUrlFetcher(),
+  };
 }
 
 let services: Promise<WorkerServices> | undefined;

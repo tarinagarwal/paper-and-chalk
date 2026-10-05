@@ -25,11 +25,23 @@ export const purgeTrashJobSchema = z.strictObject({
 });
 export type PurgeTrashJob = z.infer<typeof purgeTrashJobSchema>;
 
+/**
+ * Fetches a PDF or image from a web address into S3 as an asset of the workspace (the Import
+ * tab's "from URL"). The worker refuses private and local addresses and anything over the limit.
+ */
+export const importFromUrlJobSchema = z.strictObject({
+  workspaceId: z.uuid(),
+  userId: z.string().min(1).max(64),
+  url: z.url().max(2000),
+});
+export type ImportFromUrlJob = z.infer<typeof importFromUrlJobSchema>;
+
 /** Every job kind and its payload schema. Add new kinds here. */
 export const jobPayloadSchemas = {
   ping: pingJobSchema,
   verifyAsset: verifyAssetJobSchema,
   purgeTrash: purgeTrashJobSchema,
+  importFromUrl: importFromUrlJobSchema,
 } as const;
 
 export type JobKind = keyof typeof jobPayloadSchemas;

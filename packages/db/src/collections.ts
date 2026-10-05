@@ -9,9 +9,11 @@ import type {
   FolderRecord,
   JobRecord,
   PageRecord,
+  PageSizePresetRecord,
   ShareLinkRecord,
   SmartFolderRecord,
   TagRecord,
+  TemplateRecord,
   UploadRecord,
   VersionRecord,
   WorkspaceMemberRecord,
@@ -49,6 +51,8 @@ export const collections = {
   uploads: "uploads",
   documentUserStates: "documentUserStates",
   smartFolders: "smartFolders",
+  templates: "templates",
+  pageSizePresets: "pageSizePresets",
 } as const;
 
 export type CollectionName = (typeof collections)[keyof typeof collections];
@@ -90,6 +94,8 @@ export function typedCollections(db: Db) {
     uploads: c<UploadRecord>(collections.uploads),
     documentUserStates: c<DocumentUserStateRecord>(collections.documentUserStates),
     smartFolders: c<SmartFolderRecord>(collections.smartFolders),
+    templates: c<TemplateRecord>(collections.templates),
+    pageSizePresets: c<PageSizePresetRecord>(collections.pageSizePresets),
   };
 }
 

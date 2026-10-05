@@ -4,7 +4,7 @@ import { isJobKind } from "@pc/schema";
 
 import { readTaskMeta } from "./cloud-tasks";
 import { jobHandlers, type JobHandlers, type WorkerServices } from "./jobs";
-import { executeJob, InvalidJobError } from "./run-job";
+import { executeJob, InvalidJobError, JobRefusedError } from "./run-job";
 
 const MAX_BODY_BYTES = 1024 * 1024;
 const JOB_PATH = /^\/jobs\/([A-Za-z0-9_-]+)$/;
@@ -92,6 +92,11 @@ async function handle(
   } catch (error) {
     if (error instanceof HttpError) {
       sendJson(res, error.status, { ok: false, error: error.message, details: error.details });
+      return;
+    }
+    if (error instanceof JobRefusedError) {
+      // 422: understood, but it cannot succeed; a queue must not retry it.
+      sendJson(res, 422, { ok: false, error: error.message });
       return;
     }
     if (error instanceof InvalidJobError) {

@@ -73,3 +73,13 @@ const CHECKS: Record<UploadMime, Check> = {
 export function matchesDeclaredType(declared: UploadMime, firstBytes: Uint8Array): boolean {
   return CHECKS[declared](firstBytes);
 }
+
+/** What a fetched file really is, among the types the Import tab takes (PDF and web images). */
+export function sniffImportType(
+  firstBytes: Uint8Array,
+): "application/pdf" | "image/png" | "image/jpeg" | "image/webp" | null {
+  for (const mime of ["application/pdf", "image/png", "image/jpeg", "image/webp"] as const) {
+    if (matchesDeclaredType(mime, firstBytes)) return mime;
+  }
+  return null;
+}

@@ -7,7 +7,12 @@ import { z } from "zod";
 
 import { roleSchema, shareLinkRoleSchema } from "./access";
 import { libraryFiltersSchema, librarySortSchema, sortDirSchema } from "./library";
-import { pageBackgroundSchema, pageRotationSchema, pageSpecSchema } from "./page";
+import {
+  canvasBackgroundSchema,
+  pageBackgroundSchema,
+  pageRotationSchema,
+  pageSpecSchema,
+} from "./page";
 import {
   documentTypeSchema,
   fractionalIndexSchema,
@@ -92,6 +97,15 @@ export const documentCoverSchema = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("color"), color: hexColorSchema }),
   z.strictObject({ kind: z.literal("image"), assetId: recordId }),
 ]);
+export type DocumentCover = z.infer<typeof documentCoverSchema>;
+
+/** A file a document was imported from, in the order the pages come from them. */
+export const documentSourceSchema = z.strictObject({
+  assetId: recordId,
+  kind: z.enum(["pdf", "image"]),
+  fileName: z.string().min(1).max(255),
+});
+export type DocumentSource = z.infer<typeof documentSourceSchema>;
 
 export const documentRecordSchema = z.strictObject({
   _id: recordId,
@@ -106,6 +120,13 @@ export const documentRecordSchema = z.strictObject({
   cover: documentCoverSchema.nullable(),
   /** Spec for new pages in notebooks; null for canvases. */
   defaultPageSpec: pageSpecSchema.nullable(),
+  /** Background of an infinite canvas; null for paged documents. */
+  canvasBackground: canvasBackgroundSchema.nullable(),
+  /**
+   * Imported files, in page order (PDFs become pages when they are processed). The document
+   * references these assets; several documents may share one (uploads are deduplicated).
+   */
+  sources: z.array(documentSourceSchema).max(50),
   sourcePdfPath: z.string().max(1024).nullable(),
   pageCount: z.int().nonnegative(),
   /** Bytes of the files that belong to the document (kept up to date as assets attach). */
@@ -148,6 +169,44 @@ export const smartFolderRecordSchema = z.strictObject({
   ...timestamps,
 });
 export type SmartFolderRecord = z.infer<typeof smartFolderRecordSchema>;
+
+/** A page as a template keeps it: its size and paper (drawings come with the editor). */
+export const templatePageSchema = z.strictObject({
+  widthPt: positivePoints,
+  heightPt: positivePoints,
+  rotation: pageRotationSchema,
+  background: pageBackgroundSchema,
+});
+export type TemplatePage = z.infer<typeof templatePageSchema>;
+
+/** "My templates": a document's setup saved to start new documents from. Private to its owner. */
+export const templateRecordSchema = z.strictObject({
+  _id: recordId,
+  ownerId: userId,
+  name: z.string().trim().min(1).max(80),
+  type: z.enum(["notebook", "canvas"]),
+  defaultPageSpec: pageSpecSchema.nullable(),
+  pages: z.array(templatePageSchema).max(500),
+  canvasBackground: canvasBackgroundSchema.nullable(),
+  /** Colour covers only: an uploaded cover belongs to its workspace. */
+  coverColor: hexColorSchema.nullable(),
+  sourceDocumentId: recordId.nullable(),
+  ...timestamps,
+});
+export type TemplateRecord = z.infer<typeof templateRecordSchema>;
+
+/** A page size someone saved from the custom size fields. */
+export const pageSizePresetRecordSchema = z.strictObject({
+  _id: recordId,
+  userId,
+  name: z.string().trim().min(1).max(40),
+  widthPt: positivePoints.max(14_400),
+  heightPt: positivePoints.max(14_400),
+  /** The unit it was entered in, so it shows the same way again. */
+  unit: z.enum(["mm", "cm", "in", "px"]),
+  ...timestamps,
+});
+export type PageSizePresetRecord = z.infer<typeof pageSizePresetRecordSchema>;
 
 export const pageRecordSchema = z.strictObject({
   _id: recordId,

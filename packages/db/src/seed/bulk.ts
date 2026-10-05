@@ -4,6 +4,7 @@
  * `pnpm db:seed --bulk <count>` and the library's end-to-end tests.
  */
 import {
+  DEFAULT_CANVAS_BACKGROUND,
   documentPermissionRecordSchema,
   documentRecordSchema,
   tagRecordSchema,
@@ -125,6 +126,8 @@ export async function seedBulkWorkspace(
           titleKey: titleSortKey(title),
           cover: null,
           defaultPageSpec: null,
+          canvasBackground: type === "canvas" ? DEFAULT_CANVAS_BACKGROUND : null,
+          sources: [],
           sourcePdfPath: null,
           pageCount: type === "canvas" ? 0 : 1 + Math.floor(rand() * 40),
           bytes: type === "pdf" ? Math.floor((0.2 + rand() * 30) * MB) : Math.floor(rand() * MB),

@@ -13,12 +13,25 @@ import {
 } from "@pc/schema";
 import { keepPreviousData, useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 import { useWindowVirtualizer } from "@tanstack/react-virtual";
-import { ChevronRight, FolderInput, MoreHorizontal, RotateCcw, Trash2, X } from "lucide-react";
+import {
+  ChevronRight,
+  FileUp,
+  FolderInput,
+  MoreHorizontal,
+  RotateCcw,
+  Trash2,
+  X,
+} from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
+import {
+  NewDocumentDialog,
+  type NewDocumentTab,
+} from "@/components/new-document/new-document-dialog";
+import { startImport, type ImportEntry } from "@/components/new-document/import-tab";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -26,9 +39,11 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useFileDrop } from "@/hooks/use-file-drop";
 import { useLibraryActions } from "@/hooks/use-library-actions";
 import { useSidebarData } from "@/hooks/use-library-data";
 import { useSidebarActions } from "@/hooks/use-sidebar-actions";
+import { useUpload } from "@/hooks/use-upload";
 import { libraryApi } from "@/lib/library/api";
 import { itemsOf, libraryKeys } from "@/lib/library/cache";
 import { childrenOf } from "@/lib/library/folders";
@@ -65,8 +80,8 @@ import { FolderGlyph } from "./folder-icon";
 import { useLibrary } from "./library-context";
 import {
   MoveDialog,
-  NewDocumentDialog,
   PurgeDialog,
+  RenameDialog,
   SmartFolderDialog,
   TagDialog,
   type TagDraft,
@@ -236,16 +251,36 @@ export function LibraryView(props: LibraryViewProps) {
   const [moveTargets, setMoveTargets] = useState<LibraryDocument[] | null>(null);
   const [purgeTargets, setPurgeTargets] = useState<LibraryDocument[] | null>(null);
   const [tagTargets, setTagTargets] = useState<LibraryDocument[] | null>(null);
-  const [newOpen, setNewOpen] = useState(false);
+  const [templateTarget, setTemplateTarget] = useState<LibraryDocument | null>(null);
+  const [newDialog, setNewDialog] = useState<{
+    tab: NewDocumentTab;
+    entries: ImportEntry[];
+  } | null>(null);
   const [smartOpen, setSmartOpen] = useState(false);
   const newTagDraft = useMemo<TagDraft>(() => ({ name: "", color: "#2f5d8a" }), []);
 
+  // New documents go to the folder on screen, else to the root of the workspace.
   const canCreate = scope.kind !== "trash" && scope.kind !== "shared";
+  const newFolderId = scope.kind === "folder" ? scope.folderId : null;
   const onNew = canCreate
     ? () => {
-        setNewOpen(true);
+        setNewDialog({ tab: "notebook", entries: [] });
       }
     : null;
+
+  // Files dropped anywhere on the library start uploading and open the Import tab.
+  const { upload } = useUpload();
+  const onDropFiles = useCallback(
+    (files: File[]) => {
+      const { entries, refused } = startImport(files, upload, sidebarWorkspace);
+      if (refused.length > 0) {
+        toast.error(`Only PDFs and images can be imported: ${refused.join(", ")}`);
+      }
+      if (entries.length > 0) setNewDialog({ tab: "import", entries });
+    },
+    [upload, sidebarWorkspace],
+  );
+  const draggingFiles = useFileDrop(canCreate && newDialog === null, onDropFiles);
 
   // ---------------------------------------------------------------------------------------------
   // layout and virtualization
@@ -320,7 +355,14 @@ export function LibraryView(props: LibraryViewProps) {
   // actions
 
   const handlers: MenuHandlers = {
-    open: (item) => void actions.open(item),
+    // The document page records the open (Recents); the cached views refresh on return.
+    open: (item) => {
+      actions.markStale();
+      router.push(`/app/d/${item.id}`);
+    },
+    saveTemplate: (item) => {
+      setTemplateTarget(item);
+    },
     rename: (item) => {
       setRenamingId(item.id);
     },
@@ -566,6 +608,16 @@ export function LibraryView(props: LibraryViewProps) {
 
   return (
     <div className="flex flex-1 flex-col px-4 pb-10 sm:px-8">
+      {draggingFiles ? (
+        <div
+          data-testid="library-drop-overlay"
+          className="pointer-events-none fixed inset-3 z-50 flex flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed border-primary bg-background/90"
+        >
+          <FileUp aria-hidden className="size-8 text-primary" />
+          <p className="font-display text-h3">Drop to import</p>
+          <p className="text-sm text-muted-foreground">PDFs and images become a new document.</p>
+        </div>
+      ) : null}
       <header className="flex flex-col gap-2 pt-6 pb-4 sm:pt-8">
         <nav
           aria-label="Breadcrumb"
@@ -927,10 +979,43 @@ export function LibraryView(props: LibraryViewProps) {
           }
         }}
       />
-      <NewDocumentDialog
-        open={newOpen}
+      {newDialog ? (
+        <NewDocumentDialog
+          workspaceId={sidebarWorkspace}
+          folderId={newFolderId}
+          initialTab={newDialog.tab}
+          initialEntries={newDialog.entries}
+          onClose={() => {
+            setNewDialog(null);
+          }}
+          onCreated={() => {
+            actions.markStale();
+            void qc.invalidateQueries({ queryKey: libraryKeys.storage });
+          }}
+        />
+      ) : null}
+      <RenameDialog
+        open={templateTarget !== null}
+        title="Save as template"
+        description="Name the template. It keeps the page setup, not what is drawn on the pages."
+        submitLabel="Save template"
+        testId="save-template-dialog"
+        initial={templateTarget?.title.slice(0, 80) ?? ""}
+        maxLength={80}
         onClose={() => {
-          setNewOpen(false);
+          setTemplateTarget(null);
+        }}
+        onSubmit={async (name) => {
+          const target = templateTarget;
+          if (!target) return;
+          try {
+            await libraryApi.saveAsTemplate(target.id, name);
+            setTemplateTarget(null);
+            await qc.invalidateQueries({ queryKey: ["templates"] });
+            toast.success(`Saved “${name}” to My templates`);
+          } catch (error) {
+            toast.error(error instanceof Error ? error.message : "Couldn't save the template");
+          }
         }}
       />
       <SmartFolderDialog

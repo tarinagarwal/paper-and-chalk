@@ -88,7 +88,7 @@ test.describe("library", () => {
     await page.getByTestId("sort-direction").click();
     await expect.poll(async () => (await titles(page))[0]).toBe("Weekly notes");
 
-    await page.getByTestId("filters-button").click();
+    await page.getByTestId("filters-button").filter({ visible: true }).click();
     await page.getByTestId("filters-panel").getByLabel("PDF").check();
     await expect(count(page)).toHaveText("2 documents");
     await page.getByTestId("filters-panel").getByLabel("Exam").check();
@@ -99,7 +99,7 @@ test.describe("library", () => {
     await expect(count(page)).toHaveText("1 document");
     await expect(card(page, "Organic reactions")).toBeVisible();
     await page.keyboard.press("Escape");
-    await page.getByTestId("filters-button").click();
+    await page.getByTestId("filters-button").filter({ visible: true }).click();
     await page.getByTestId("filters-panel").getByRole("button", { name: "Clear filters" }).click();
     await expect(count(page)).toHaveText("6 documents");
     await page.keyboard.press("Escape");
@@ -264,8 +264,11 @@ test.describe("library", () => {
     await page.getByRole("menuitem", { name: "Add to favourites" }).click();
     await expect(toast(page, "Added 1 document to favourites")).toBeVisible();
 
+    // Opening goes to the document, which records the open (Recents).
     await card(page, lecture).dblclick();
-    await expect(toast(page, `Opening “${lecture}”`)).toBeVisible();
+    await page.waitForURL(`**/app/d/${seeded.docs[lecture] ?? ""}`);
+    await expect(page.getByRole("heading", { name: lecture, level: 1 })).toBeVisible();
+    await page.goBack();
 
     await card(page, "Weekly notes").click({ button: "right" });
     await page.getByRole("menuitem", { name: "Tags" }).hover();
@@ -286,7 +289,7 @@ test.describe("library", () => {
 
     // Smart folder: PDFs tagged Review.
     await page.getByRole("link", { name: "Home" }).first().click();
-    await page.getByTestId("filters-button").click();
+    await page.getByTestId("filters-button").filter({ visible: true }).click();
     await page.getByTestId("filters-panel").getByLabel("PDF").check();
     await page.getByTestId("filters-panel").getByLabel("Review").check();
     await page.keyboard.press("Escape");

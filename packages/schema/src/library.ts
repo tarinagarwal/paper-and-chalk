@@ -297,6 +297,21 @@ export const storageViewSchema = z.strictObject({
 });
 export type StorageView = z.infer<typeof storageViewSchema>;
 
+/** Where the used storage is: in documents, or in files no document uses; the biggest documents. */
+export const storageBreakdownSchema = z.strictObject({
+  inDocumentsBytes: z.number().nonnegative(),
+  unattachedBytes: z.number().nonnegative(),
+  largest: z.array(
+    z.strictObject({
+      id: z.uuid(),
+      workspaceId: z.uuid(),
+      title: z.string(),
+      bytes: z.number().nonnegative(),
+    }),
+  ),
+});
+export type StorageBreakdown = z.infer<typeof storageBreakdownSchema>;
+
 /** What the user may do to a document, worked out by the server's permission rules. */
 export const documentAbilitiesSchema = z.strictObject({
   edit: z.boolean(),

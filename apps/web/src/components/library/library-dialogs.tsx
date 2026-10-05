@@ -10,7 +10,7 @@ import {
   type FolderView,
   type LibraryDocument,
 } from "@pc/schema";
-import { Check, FileText, Folder, Loader2, NotebookPen, Shapes } from "lucide-react";
+import { Check, Folder, Loader2 } from "lucide-react";
 import { useState } from "react";
 
 import {
@@ -198,53 +198,6 @@ export function PurgeDialog({
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
-  );
-}
-
-// ---------------------------------------------------------------------------------------------
-
-const NEW_KINDS = [
-  { icon: NotebookPen, title: "Notebook", body: "Pages of paper: ruled, grid, dotted or blank." },
-  { icon: Shapes, title: "Board", body: "An infinite canvas for diagrams and brainstorms." },
-  { icon: FileText, title: "Import a PDF", body: "Annotate slides, papers and textbooks." },
-];
-
-/** The New button's dialog. Creating documents is the next part of the build. */
-export function NewDocumentDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
-  return (
-    <Dialog
-      open={open}
-      onOpenChange={(next) => {
-        if (!next) onClose();
-      }}
-    >
-      <DialogContent className="gap-5 sm:max-w-lg" data-testid="new-document-dialog">
-        <DialogHeader>
-          <DialogTitle className={titleClass}>New document</DialogTitle>
-          <DialogDescription>Creating documents is coming soon.</DialogDescription>
-        </DialogHeader>
-        <ul className="grid gap-2">
-          {NEW_KINDS.map((kind) => (
-            <li
-              key={kind.title}
-              aria-disabled
-              className="flex items-start gap-3 rounded-lg border p-3 text-sm opacity-70"
-            >
-              <kind.icon aria-hidden className="mt-0.5 size-5 text-muted-foreground" />
-              <div>
-                <p className="font-medium">{kind.title}</p>
-                <p className="text-muted-foreground">{kind.body}</p>
-              </div>
-            </li>
-          ))}
-        </ul>
-        <DialogFooter>
-          <Button type="button" variant="outline" onClick={onClose}>
-            Close
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
   );
 }
 
@@ -631,6 +584,9 @@ export function RenameDialog({
   maxLength,
   onClose,
   onSubmit,
+  submitLabel = "Rename",
+  description = "Choose a new name.",
+  testId = "rename-dialog",
 }: {
   open: boolean;
   title: string;
@@ -638,6 +594,10 @@ export function RenameDialog({
   maxLength: number;
   onClose: () => void;
   onSubmit: (name: string) => Promise<unknown>;
+  submitLabel?: string;
+  /** For screen readers. */
+  description?: string;
+  testId?: string;
 }) {
   const [name, setName] = useState(initial);
   const [lastInitial, setLastInitial] = useState(initial);
@@ -653,10 +613,10 @@ export function RenameDialog({
         if (!next) onClose();
       }}
     >
-      <DialogContent className="gap-5 sm:max-w-md" data-testid="rename-dialog">
+      <DialogContent className="gap-5 sm:max-w-md" data-testid={testId}>
         <DialogHeader>
           <DialogTitle className={titleClass}>{title}</DialogTitle>
-          <DialogDescription className="sr-only">Choose a new name.</DialogDescription>
+          <DialogDescription className="sr-only">{description}</DialogDescription>
         </DialogHeader>
         <form
           className="flex flex-col gap-5"
@@ -682,7 +642,7 @@ export function RenameDialog({
               Cancel
             </Button>
             <Button type="submit" disabled={!trimmed}>
-              Rename
+              {submitLabel}
             </Button>
           </DialogFooter>
         </form>

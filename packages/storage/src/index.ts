@@ -12,8 +12,9 @@ export {
   UPLOAD_URL_TTL_SECONDS,
   type ObjectInfo,
   type SignedRequest,
+  StreamTooLargeError,
   type Storage,
   type UploadedPart,
 } from "./client";
-export { matchesDeclaredType, SNIFF_BYTES } from "./file-types";
+export { matchesDeclaredType, sniffImportType, SNIFF_BYTES } from "./file-types";
 export { awsCredentialsFromEnv, googleWebIdentityCredentials } from "./credentials";

@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
-import type { Server } from "node:http";
+import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 
 import { createFileRepositories, createRepositories, typedCollections } from "@pc/db";
@@ -8,6 +8,7 @@ import { testStorage } from "@pc/storage/testing";
 import { ObjectId } from "mongodb";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { createUrlFetcher, FetchRefusedError, isBlockedAddress } from "./fetch-url";
 import { jobHandlers, type JobHandlers, type WorkerServices } from "./jobs";
 import { createWorkerServer } from "./server";
 
@@ -16,11 +17,17 @@ type JobCall = [string, string, ...unknown[]];
 /** Services that only record job bookkeeping calls. */
 function fakeServices(calls: JobCall[] = []): WorkerServices {
   return {
+    storage: { putStream: () => Promise.reject(new Error("not in this test")) },
+    fetchUrl: { fetch: () => Promise.reject(new Error("not in this test")) },
     files: {
       verification: { verify: () => Promise.resolve({ status: "skipped", reason: "not_found" }) },
       trash: {
         purgeExpired: () =>
           Promise.resolve({ documents: 0, folders: 0, objectsRemoved: 0, objectsFailed: 0 }),
+      },
+      imports: {
+        registerFetched: () => Promise.reject(new Error("not in this test")),
+        keyFor: (workspaceId: string, assetId: string) => `ws/${workspaceId}/${assetId}`,
       },
     },
     jobs: {
@@ -184,7 +191,12 @@ describe("verifyAsset job", () => {
     const { asset } = await files.uploads.complete(ctx, init.upload._id);
     const job = await repos.jobs.create("verifyAsset", { assetId: asset._id });
 
-    const worker = await start({ files, jobs: repos.jobs });
+    const worker = await start({
+      files,
+      jobs: repos.jobs,
+      storage,
+      fetchUrl: createUrlFetcher(),
+    });
     try {
       const res = await post(
         worker.base,
@@ -202,6 +214,139 @@ describe("verifyAsset job", () => {
     } finally {
       await stop(worker.server);
       await storage.remove(asset.bucket, asset.key);
+      await closeTestDb(conn);
+    }
+  });
+});
+
+describe("URL fetching", () => {
+  it("knows private, local and metadata addresses", () => {
+    for (const ip of [
+      "127.0.0.1",
+      "10.1.2.3",
+      "172.20.0.1",
+      "192.168.1.1",
+      "169.254.169.254",
+      "::1",
+      "fd00::1",
+      "::ffff:10.0.0.1",
+      "0.0.0.0",
+    ]) {
+      expect(isBlockedAddress(ip), ip).toBe(true);
+    }
+    for (const ip of ["8.8.8.8", "52.95.110.1", "2606:4700:4700::1111"]) {
+      expect(isBlockedAddress(ip), ip).toBe(false);
+    }
+  });
+
+  it("refuses plain http, private addresses and names that resolve to them", async () => {
+    const fetcher = createUrlFetcher({ timeoutMs: 5000 });
+    for (const url of [
+      "http://example.com/a.pdf",
+      "https://127.0.0.1/a.pdf",
+      "https://169.254.169.254/latest",
+      "https://localhost/a.pdf",
+    ]) {
+      await expect(fetcher.fetch(url), url).rejects.toBeInstanceOf(FetchRefusedError);
+    }
+  });
+});
+
+describe("importFromUrl job", () => {
+  it("fetches a PDF into S3 as a ready asset, and refuses what is not a PDF or image", async () => {
+    const conn = await openTestDb("workers_import");
+    const storage = testStorage();
+    const files = createFileRepositories(conn, storage);
+    const repos = createRepositories(conn);
+    const owner = new ObjectId();
+    await typedCollections(conn.db).users.insertOne({
+      _id: owner,
+      name: "Owner",
+      email: "owner@example.com",
+      emailVerified: true,
+      plan: "free",
+      storageUsedBytes: 0,
+      settings: "{}",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    const ctx = { actor: { kind: "user", userId: owner.toHexString(), email: "o@e.x" } } as const;
+    const workspace = await repos.workspaces.create(ctx, { name: "Import test" });
+
+    const pdf = Buffer.concat([Buffer.from("%PDF-1.7\n"), randomBytes(20_000)]);
+    const site = createServer((req, res) => {
+      if (req.url === "/files/notes.pdf") {
+        res.writeHead(200, {
+          "content-type": "application/octet-stream",
+          "content-length": String(pdf.length),
+        });
+        res.end(pdf);
+      } else if (req.url === "/go") {
+        res.writeHead(302, { location: "/files/notes.pdf" });
+        res.end();
+      } else {
+        res.writeHead(200, { "content-type": "application/pdf" });
+        res.end("<html>not really a pdf</html>");
+      }
+    });
+    await new Promise<void>((resolve) => site.listen(0, "127.0.0.1", resolve));
+    const origin = `http://127.0.0.1:${String((site.address() as AddressInfo).port)}`;
+    // Tests serve from localhost, so this fetcher allows it; the deployed one never does.
+    const worker = await start({
+      files,
+      jobs: repos.jobs,
+      storage,
+      fetchUrl: createUrlFetcher({ allowPrivate: true }),
+    });
+    try {
+      const job = await repos.jobs.create("importFromUrl", {
+        workspaceId: workspace._id,
+        userId: owner.toHexString(),
+        url: `${origin}/go`,
+      });
+      const res = await post(
+        worker.base,
+        "/jobs/importFromUrl",
+        { workspaceId: workspace._id, userId: owner.toHexString(), url: `${origin}/go` },
+        { "X-PC-Job-Id": job._id },
+      );
+      const body = (await res.json()) as {
+        result: { assetId: string; fileName: string; kind: string; bytes: number };
+      };
+      expect(body.result).toMatchObject({ fileName: "notes.pdf", kind: "pdf", bytes: pdf.length });
+      const asset = await typedCollections(conn.db).assets.findOne({ _id: body.result.assetId });
+      expect(asset).toMatchObject({
+        status: "ready",
+        sha256: createHash("sha256").update(pdf).digest("hex"),
+        workspaceId: workspace._id,
+      });
+      expect((await storage.head("originals", asset?.key ?? ""))?.size).toBe(pdf.length);
+      expect(await repos.jobs.get(job._id)).toMatchObject({ status: "succeeded" });
+      if (asset) await storage.remove(asset.bucket, asset.key);
+
+      const refused = await repos.jobs.create("importFromUrl", {
+        workspaceId: workspace._id,
+        userId: owner.toHexString(),
+        url: `${origin}/page.html`,
+      });
+      const bad = await post(
+        worker.base,
+        "/jobs/importFromUrl",
+        { workspaceId: workspace._id, userId: owner.toHexString(), url: `${origin}/page.html` },
+        { "X-PC-Job-Id": refused._id },
+      );
+      expect(bad.status).toBe(422);
+      expect(await repos.jobs.get(refused._id)).toMatchObject({
+        status: "failed",
+        error: "That address is not a PDF or an image (JPG, PNG, WebP)",
+      });
+    } finally {
+      await stop(worker.server);
+      await new Promise<void>((resolve) =>
+        site.close(() => {
+          resolve();
+        }),
+      );
       await closeTestDb(conn);
     }
   });

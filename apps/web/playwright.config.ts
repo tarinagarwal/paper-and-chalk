@@ -81,6 +81,8 @@ export default defineConfig({
       env: {
         MONGODB_URI: E2E_MONGODB_URI,
         WORKERS_PORT: String(WORKERS_PORT),
+        // Files the workers write (URL imports) stay under test/ too.
+        S3_KEY_PREFIX: E2E_KEY_PREFIX,
       },
     },
   ],

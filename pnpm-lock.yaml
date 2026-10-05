@@ -102,6 +102,9 @@ importers:
       '@pc/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@pc/engine':
+        specifier: workspace:*
+        version: link:../../packages/engine
       '@pc/schema':
         specifier: workspace:*
         version: link:../../packages/schema
@@ -262,6 +265,9 @@ importers:
       uuid:
         specifier: 14.0.2
         version: 14.0.2
+      yjs:
+        specifier: 13.6.33
+        version: 13.6.33
       zod:
         specifier: ^4.6.5
         version: 4.6.5
@@ -338,6 +344,9 @@ importers:
       uuid:
         specifier: 14.0.2
         version: 14.0.2
+      yjs:
+        specifier: 13.6.33
+        version: 13.6.33
     devDependencies:
       '@pc/config':
         specifier: workspace:*

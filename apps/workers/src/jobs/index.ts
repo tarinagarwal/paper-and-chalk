@@ -1,3 +1,4 @@
+import { importFromUrl } from "./import-from-url";
 import { ping } from "./ping";
 import { purgeTrash } from "./purge-trash";
 import type { JobHandlers } from "./types";
@@ -8,6 +9,7 @@ export const jobHandlers: JobHandlers = {
   ping,
   verifyAsset,
   purgeTrash,
+  importFromUrl,
 };
 
 export type { JobContext, JobHandler, JobHandlers, WorkerServices } from "./types";

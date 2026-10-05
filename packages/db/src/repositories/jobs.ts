@@ -38,6 +38,13 @@ export function jobsRepository(r: RepoContext) {
 
     get: (id: string) => c.jobs.findOne({ _id: id }),
 
+    /** A job the user started (its input names them); anyone else's does not exist for them. */
+    async getForUser(id: string, userId: string): Promise<JobRecord | null> {
+      const job = await c.jobs.findOne({ _id: id });
+      const input = job?.input as { userId?: unknown } | null | undefined;
+      return job && input?.userId === userId ? job : null;
+    },
+
     async start(id: string): Promise<void> {
       await c.jobs.updateOne(
         { _id: id },

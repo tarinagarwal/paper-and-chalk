@@ -27,6 +27,7 @@
     "fractional-indexing": "4.0.0",
     "mongodb": "^7.6.0",
     "uuid": "14.0.2",
+    "yjs": "13.6.33",
     "zod": "^4.6.5"
   },
   "devDependencies": {

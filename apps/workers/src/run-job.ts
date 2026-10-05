@@ -3,6 +3,17 @@ import { jobPayloadSchemas, type JobKind, type JobPayload } from "@pc/schema";
 import type { JobContext, JobHandlers } from "./jobs";
 import { log } from "./log";
 
+/**
+ * The job was understood but cannot succeed (a URL import of a private address, a file that is
+ * not a PDF, too large). The job record says why; retrying cannot help.
+ */
+export class JobRefusedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "JobRefusedError";
+  }
+}
+
 /** The payload does not match its kind's schema. Retrying cannot help. */
 export class InvalidJobError extends Error {
   constructor(readonly issues: unknown) {

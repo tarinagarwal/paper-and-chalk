@@ -17,10 +17,24 @@ export function assetsRepository(r: RepoContext, storage: Storage) {
     ctx: AccessContext,
     assetId: string,
     purpose: "view" | "download",
+    via: string | null = null,
   ): Promise<AssetRecord> {
     const asset = await c.assets.findOne({ _id: assetId });
     if (!asset) throw new InvalidRequestError("not_found", "That file does not exist");
-    if (asset.documentId) {
+    if (via) {
+      // Through a document that uses the file (files can be shared by several documents).
+      await authorize(r, ctx, { type: "document", documentId: via }, purpose);
+      const document = await c.documents.findOne({ _id: via });
+      const uses =
+        document !== null &&
+        (document.sources.some((s) => s.assetId === assetId) ||
+          (document.cover?.kind === "image" && document.cover.assetId === assetId) ||
+          (await c.pages.countDocuments(
+            { documentId: via, deletedAt: null, "background.assetId": assetId },
+            { limit: 1 },
+          )) > 0);
+      if (!uses) throw new InvalidRequestError("not_found", "That file does not exist");
+    } else if (asset.documentId) {
       await authorize(r, ctx, { type: "document", documentId: asset.documentId }, purpose);
     } else {
       await authorize(r, ctx, { type: "workspace", workspaceId: asset.workspaceId }, "view");
@@ -31,13 +45,22 @@ export function assetsRepository(r: RepoContext, storage: Storage) {
   return {
     get: (ctx: AccessContext, assetId: string) => load(ctx, assetId, "view"),
 
-    /** A 15-minute signed URL. Only verified files are served. */
+    /**
+     * A 15-minute signed URL. Only verified files are served. `documentId` reads the file as part
+     * of that document (image pages, covers): how people with access to the document but not the
+     * workspace see its files.
+     */
     async readUrl(
       ctx: AccessContext,
       assetId: string,
-      options: { download?: boolean } = {},
+      options: { download?: boolean; documentId?: string | null } = {},
     ): Promise<SignedRequest> {
-      const asset = await load(ctx, assetId, options.download ? "download" : "view");
+      const asset = await load(
+        ctx,
+        assetId,
+        options.download ? "download" : "view",
+        options.documentId ?? null,
+      );
       if (asset.status === "rejected") {
         throw new InvalidRequestError("asset_rejected", "This file was rejected");
       }

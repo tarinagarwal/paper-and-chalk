@@ -122,6 +122,47 @@ export const GRID_SPACING_PRESETS_PT = {
   quarterInch: 18,
 } as const;
 
+/**
+ * What each template looks like by default: its label, line spacing and margin. The New dialog
+ * starts from these; people can change spacing and margins afterwards.
+ */
+export const TEMPLATE_DEFAULTS: Record<
+  PaperTemplate,
+  { label: string; spacingPt: number; marginPt: number }
+> = {
+  blank: { label: "Blank", spacingPt: 20, marginPt: 0 },
+  // 9/32 in, 11/32 in and 1/4 in: the usual college, wide and narrow rules.
+  ruledCollege: { label: "College ruled", spacingPt: 20.25, marginPt: 90 },
+  ruledWide: { label: "Wide ruled", spacingPt: 24.75, marginPt: 90 },
+  ruledNarrow: { label: "Narrow ruled", spacingPt: 18, marginPt: 72 },
+  grid: { label: "Grid", spacingPt: GRID_SPACING_PRESETS_PT["5mm"], marginPt: 0 },
+  dotGrid: { label: "Dot grid", spacingPt: GRID_SPACING_PRESETS_PT["5mm"], marginPt: 0 },
+  isometric: { label: "Isometric", spacingPt: 16, marginPt: 0 },
+  hex: { label: "Hex", spacingPt: 14, marginPt: 0 },
+  graphWithAxes: {
+    label: "Graph with axes",
+    spacingPt: GRID_SPACING_PRESETS_PT["5mm"],
+    marginPt: 18,
+  },
+  musicStaff: { label: "Music staff", spacingPt: 7.2, marginPt: 42 },
+  cornell: { label: "Cornell notes", spacingPt: 20.25, marginPt: 36 },
+  plannerDaily: { label: "Daily planner", spacingPt: 22, marginPt: 36 },
+  plannerWeekly: { label: "Weekly planner", spacingPt: 20, marginPt: 36 },
+  plannerMonthly: { label: "Monthly planner", spacingPt: 20, marginPt: 36 },
+  storyboard: { label: "Storyboard", spacingPt: 16, marginPt: 36 },
+  handwritingPractice: { label: "Handwriting lines", spacingPt: 12, marginPt: 36 },
+  engineering: { label: "Engineering", spacingPt: 14.4, marginPt: 36 },
+  calligraphySlants: { label: "Calligraphy slants", spacingPt: 10, marginPt: 36 },
+};
+
+/** Paper and line colours offered in the New dialog; "dark" is the dark-paper preset. */
+export const PAPER_COLOR_PRESETS = {
+  white: { label: "White", paperColor: "#ffffff", lineColor: "#cadcf1" },
+  cream: { label: "Cream", paperColor: "#fbf6e8", lineColor: "#d9cfb8" },
+  grey: { label: "Grey lines", paperColor: "#ffffff", lineColor: "#c7c7c7" },
+  dark: { label: "Dark paper", paperColor: "#1f2124", lineColor: "#5b616b" },
+} as const;
+
 // ---------------------------------------------------------------------------------------------
 // page background and spec
 
@@ -143,9 +184,20 @@ export const pdfBackgroundSchema = z.strictObject({
   pageIndex: z.int().nonnegative(),
 });
 
+/** An imported image as the page: filling a page sized to it, or centred on a paper size. */
+export const IMAGE_FITS = ["fill", "contain"] as const;
+export const imageBackgroundSchema = z.strictObject({
+  kind: z.literal("image"),
+  assetId: idSchema,
+  fit: z.enum(IMAGE_FITS),
+  /** Shows around a contained image. */
+  paperColor: hexColorSchema,
+});
+
 export const pageBackgroundSchema = z.discriminatedUnion("kind", [
   paperBackgroundSchema,
   pdfBackgroundSchema,
+  imageBackgroundSchema,
 ]);
 export type PageBackground = z.infer<typeof pageBackgroundSchema>;
 
@@ -168,3 +220,35 @@ export const pageSpecSchema = z.strictObject({
   background: pageBackgroundSchema,
 });
 export type PageSpec = z.infer<typeof pageSpecSchema>;
+export type PaperBackground = z.infer<typeof paperBackgroundSchema>;
+
+/** A page size in points: 1 CSS pixel = 0.75 pt, capped to the largest page we allow. */
+export function imagePageSize(
+  widthPx: number,
+  heightPx: number,
+): { widthPt: number; heightPt: number } {
+  const scale = Math.min(1, MAX_PAGE_PT / Math.max(widthPx * 0.75, heightPx * 0.75, 1));
+  return {
+    widthPt: round2(Math.max(1, widthPx * 0.75 * scale)),
+    heightPt: round2(Math.max(1, heightPx * 0.75 * scale)),
+  };
+}
+
+// ---------------------------------------------------------------------------------------------
+// infinite canvas background (section 6)
+
+export const CANVAS_PATTERNS = ["none", "dots", "grid", "lines"] as const;
+export const canvasBackgroundSchema = z.strictObject({
+  pattern: z.enum(CANVAS_PATTERNS),
+  spacingPt: positivePoints.max(400),
+  color: hexColorSchema,
+  paperColor: hexColorSchema,
+});
+export type CanvasBackground = z.infer<typeof canvasBackgroundSchema>;
+
+export const DEFAULT_CANVAS_BACKGROUND: CanvasBackground = {
+  pattern: "dots",
+  spacingPt: 20,
+  color: "#cfc8ba",
+  paperColor: "#f7f4ec",
+};

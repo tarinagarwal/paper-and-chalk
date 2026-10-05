@@ -1,17 +1,22 @@
 import {
   bulkResultSchema,
   folderViewSchema,
+  jobViewSchema,
   libraryPageSchema,
   libraryQueryToParams,
+  pageSizePresetViewSchema,
   smartFolderViewSchema,
+  storageBreakdownSchema,
   storageViewSchema,
   tagViewSchema,
+  templateViewSchema,
   workspaceSidebarSchema,
   type BulkAction,
   type FolderIcon,
   type LibraryFilters,
   type LibraryQuery,
   type LibrarySort,
+  type NewDocument,
   type SortDir,
 } from "@pc/schema";
 import { z } from "zod";
@@ -99,6 +104,9 @@ export const libraryApi = {
 
   storage: () => required("/api/storage", { method: "GET" }, storageViewSchema),
 
+  storageBreakdown: () =>
+    required("/api/storage/breakdown", { method: "GET" }, storageBreakdownSchema),
+
   createFolder: (input: {
     workspaceId: string;
     parentId: string | null;
@@ -168,4 +176,67 @@ export const libraryApi = {
     ),
 
   deleteSmartFolder: (id: string) => call(`/api/smart-folders/${id}`, { method: "DELETE" }, null),
+
+  // --- new documents (SPEC.md section 6) ----------------------------------------------------
+
+  createDocument: (input: NewDocument) =>
+    required(
+      "/api/documents",
+      { method: "POST", body: input },
+      z.object({ id: z.uuid(), url: z.string() }),
+    ),
+
+  templates: () =>
+    required(
+      "/api/templates",
+      { method: "GET" },
+      z.object({ system: z.array(templateViewSchema), mine: z.array(templateViewSchema) }),
+    ),
+
+  saveAsTemplate: (documentId: string, name: string) =>
+    required(
+      `/api/documents/${documentId}/template`,
+      { method: "POST", body: { name } },
+      z.object({ template: templateViewSchema }),
+    ),
+
+  deleteTemplate: (id: string) => call(`/api/templates/${id}`, { method: "DELETE" }, null),
+
+  pageSizes: () =>
+    required(
+      "/api/page-sizes",
+      { method: "GET" },
+      z.object({ sizes: z.array(pageSizePresetViewSchema) }),
+    ),
+
+  savePageSize: (input: {
+    name: string;
+    widthPt: number;
+    heightPt: number;
+    unit: "mm" | "cm" | "in" | "px";
+  }) =>
+    required(
+      "/api/page-sizes",
+      { method: "POST", body: input },
+      z.object({ size: pageSizePresetViewSchema }),
+    ),
+
+  deletePageSize: (id: string) => call(`/api/page-sizes/${id}`, { method: "DELETE" }, null),
+
+  importFromUrl: (workspaceId: string, url: string) =>
+    required(
+      "/api/imports/url",
+      { method: "POST", body: { workspaceId, url } },
+      z.object({ jobId: z.uuid() }),
+    ),
+
+  job: (id: string, signal?: AbortSignal) =>
+    required(`/api/jobs/${id}`, { method: "GET", ...(signal ? { signal } : {}) }, jobViewSchema),
+
+  assetUrl: (assetId: string, documentId: string | null) =>
+    required(
+      `/api/assets/${assetId}/url${documentId ? `?document=${documentId}` : ""}`,
+      { method: "GET" },
+      z.object({ url: z.url(), expiresAt: z.string() }),
+    ),
 };

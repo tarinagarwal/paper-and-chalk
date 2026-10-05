@@ -1,13 +1,12 @@
 import { hash } from "@node-rs/argon2";
 import {
+  DEFAULT_CANVAS_BACKGROUND,
   documentPermissionRecordSchema,
   documentRecordSchema,
   documentTitleSchema,
   documentUserStateRecordSchema,
   highestRole,
-  keysBetween,
   PAGE_SIZE_PRESETS,
-  pageRecordSchema,
   pageSpecSchema,
   principalSchema,
   roleSchema,
@@ -27,8 +26,8 @@ import {
 import { InvalidRequestError } from "../errors";
 import { newId, newToken } from "../ids";
 import { can, type AccessContext } from "../permissions/can";
-import { withTransaction } from "../transaction";
 import { authorize, requireUser, type RepoContext } from "./context";
+import { checkFolder, insertDocument } from "./insert";
 import { ensurePersonalWorkspace } from "./workspaces";
 
 /** New notebooks: A4 portrait, college ruled (SPEC.md section 6 defaults). */
@@ -92,14 +91,6 @@ export function documentsRepository(r: RepoContext) {
       if (owners <= 1) {
         throw new InvalidRequestError("last_owner", "A document needs at least one owner");
       }
-    }
-  }
-
-  async function checkFolder(workspaceId: string, folderId: string | null) {
-    if (!folderId) return;
-    const folder = await c.folders.findOne({ _id: folderId, deletedAt: null });
-    if (folder?.workspaceId !== workspaceId) {
-      throw new InvalidRequestError("wrong_folder", "That folder is not in this workspace");
     }
   }
 
@@ -184,77 +175,32 @@ export function documentsRepository(r: RepoContext) {
         "createContent",
       );
       const folderId = input.folderId ?? null;
-      await checkFolder(input.workspaceId, folderId);
+      await checkFolder(r, input.workspaceId, folderId);
 
-      const now = r.now();
       const spec =
         input.type === "notebook"
           ? pageSpecSchema.parse(input.pageSpec ?? DEFAULT_NOTEBOOK_PAGE)
           : null;
       const pageCount =
         input.type === "notebook" ? Math.max(1, Math.min(input.pageCount ?? 1, 500)) : 0;
-      const document = documentRecordSchema.parse({
-        _id: newId(),
+      const { document } = await insertDocument(r, user.userId, {
         workspaceId: input.workspaceId,
         folderId,
         type: input.type,
         title: input.title,
-        titleTrigrams: trigrams(input.title),
-        titleKey: titleSortKey(input.title),
         cover: null,
         defaultPageSpec: spec,
-        sourcePdfPath: null,
-        pageCount,
+        canvasBackground: input.type === "canvas" ? DEFAULT_CANVAS_BACKGROUND : null,
+        sources: [],
         bytes: 0,
-        thumbnailPath: null,
-        tagIds: [],
-        isShared: false,
-        editorsCanShare: false,
-        createdBy: user.userId,
-        deletedBy: null,
-        createdAt: now,
-        updatedAt: now,
-        deletedAt: null,
-      });
-      const owner = documentPermissionRecordSchema.parse({
-        _id: newId(),
-        documentId: document._id,
-        principal: { kind: "user", userId: user.userId },
-        role: "owner",
-        expiresAt: null,
-        grantedBy: user.userId,
-        createdAt: now,
-        updatedAt: now,
-      });
-      const pages = spec
-        ? keysBetween(null, null, pageCount).map((orderKey) => {
-            const id = newId();
-            return pageRecordSchema.parse({
-              _id: id,
-              documentId: document._id,
-              orderKey,
+        pages: spec
+          ? Array.from({ length: pageCount }, () => ({
               widthPt: spec.widthPt,
               heightPt: spec.heightPt,
               rotation: spec.rotation,
               background: spec.background,
-              ydocName: `page:${id}`,
-              thumbnailPath: null,
-              searchText: "",
-              embedding: null,
-              embeddingModel: null,
-              locked: false,
-              lockedBy: null,
-              createdAt: now,
-              updatedAt: now,
-              deletedAt: null,
-            });
-          })
-        : [];
-
-      await withTransaction(r.conn.client, async (session) => {
-        await c.documents.insertOne(document, { session });
-        await c.documentPermissions.insertOne(owner, { session });
-        if (pages.length > 0) await c.pages.insertMany(pages, { session });
+            }))
+          : [],
       });
       return document;
     },
@@ -319,7 +265,7 @@ export function documentsRepository(r: RepoContext) {
     async move(ctx: AccessContext, documentId: string, folderId: string | null): Promise<void> {
       await authorize(r, ctx, { type: "document", documentId }, "edit");
       const document = await load(documentId);
-      await checkFolder(document.workspaceId, folderId);
+      await checkFolder(r, document.workspaceId, folderId);
       await c.documents.updateOne({ _id: documentId }, { $set: { folderId, updatedAt: r.now() } });
     },
 
@@ -415,56 +361,28 @@ export function documentsRepository(r: RepoContext) {
         source.folderId !== null &&
         (await c.folders.countDocuments({ _id: source.folderId, deletedAt: null })) > 0;
 
-      const title = copyTitle(source.title);
-      const copy = documentRecordSchema.parse({
-        ...source,
-        _id: newId(),
+      const pages = await c.pages
+        .find({ documentId, deletedAt: null })
+        .sort({ orderKey: 1, _id: 1 })
+        .toArray();
+      // Files are shared by reference: the copy uses the same ones (and so has the same size).
+      const { document: copy } = await insertDocument(r, user.userId, {
         workspaceId,
         folderId: folderAlive ? source.folderId : null,
-        title,
-        titleTrigrams: trigrams(title),
-        titleKey: titleSortKey(title),
-        bytes: 0,
-        thumbnailPath: null,
+        type: source.type,
+        title: copyTitle(source.title),
+        cover: source.cover,
+        defaultPageSpec: source.defaultPageSpec,
+        canvasBackground: source.canvasBackground,
+        sources: source.sources,
+        bytes: source.bytes,
         tagIds: canAddHere ? source.tagIds : [],
-        isShared: false,
-        editorsCanShare: false,
-        createdBy: user.userId,
-        deletedBy: null,
-        createdAt: now,
-        updatedAt: now,
-        deletedAt: null,
-      });
-      const owner = documentPermissionRecordSchema.parse({
-        _id: newId(),
-        documentId: copy._id,
-        principal: { kind: "user", userId: user.userId },
-        role: "owner",
-        expiresAt: null,
-        grantedBy: user.userId,
-        createdAt: now,
-        updatedAt: now,
-      });
-      const pages = (
-        await c.pages.find({ documentId, deletedAt: null }).sort({ orderKey: 1, _id: 1 }).toArray()
-      ).map((page) => {
-        const id = newId();
-        return pageRecordSchema.parse({
-          ...page,
-          _id: id,
-          documentId: copy._id,
-          ydocName: `page:${id}`,
-          thumbnailPath: null,
-          locked: false,
-          lockedBy: null,
-          createdAt: now,
-          updatedAt: now,
-        });
-      });
-      await withTransaction(r.conn.client, async (session) => {
-        await c.documents.insertOne(copy, { session });
-        await c.documentPermissions.insertOne(owner, { session });
-        if (pages.length > 0) await c.pages.insertMany(pages, { session });
+        pages: pages.map((page) => ({
+          widthPt: page.widthPt,
+          heightPt: page.heightPt,
+          rotation: page.rotation,
+          background: page.background,
+        })),
       });
       return copy;
     },
