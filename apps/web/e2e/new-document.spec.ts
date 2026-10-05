@@ -78,41 +78,50 @@ async function firstPageShape(page: Page) {
 const MM = 72 / 25.4;
 
 /**
- * The most common colour in a small patch of the first page (at fractions of its size), once it
- * has been drawn: the paper, not a line that happens to cross the patch.
+ * The most common colour in a small patch of the first page (at fractions of its size): the
+ * paper, not a line that happens to cross the patch. Empty until the page has been drawn.
  */
-async function colourAt(page: Page, x: number, y: number) {
-  const first = pages(page).first();
-  let rgb: number[] = [];
-  await expect
-    .poll(async () => {
-      rgb = await first.evaluate(
-        (canvas: HTMLCanvasElement, [fx, fy]) => {
-          const ctx = canvas.getContext("2d");
-          if (!ctx) return [];
-          const size = 12;
-          const left = Math.min(canvas.width - size, Math.floor(fx * canvas.width));
-          const top = Math.min(canvas.height - size, Math.floor(fy * canvas.height));
-          const data = ctx.getImageData(left, top, size, size).data;
-          const counts = new Map<string, number>();
-          for (let i = 0; i < data.length; i += 4) {
-            if (data[i + 3] !== 255) return [];
-            const key = `${String(data[i])},${String(data[i + 1])},${String(data[i + 2])}`;
-            counts.set(key, (counts.get(key) ?? 0) + 1);
-          }
-          const [top1] = [...counts].sort((a, b) => b[1] - a[1]);
-          return top1 ? top1[0].split(",").map(Number) : [];
-        },
-        [x, y] as const,
-      );
-      return rgb.length;
-    })
-    .toBe(3);
-  return rgb;
+function colourAt(page: Page, x: number, y: number): Promise<number[]> {
+  return pages(page)
+    .first()
+    .evaluate(
+      (canvas: HTMLCanvasElement, [fx, fy]) => {
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return [];
+        const size = 12;
+        const left = Math.min(canvas.width - size, Math.floor(fx * canvas.width));
+        const top = Math.min(canvas.height - size, Math.floor(fy * canvas.height));
+        const data = ctx.getImageData(left, top, size, size).data;
+        const counts = new Map<string, number>();
+        for (let i = 0; i < data.length; i += 4) {
+          if (data[i + 3] !== 255) return [];
+          const key = `${String(data[i])},${String(data[i + 1])},${String(data[i + 2])}`;
+          counts.set(key, (counts.get(key) ?? 0) + 1);
+        }
+        const [top1] = [...counts].sort((a, b) => b[1] - a[1]);
+        return top1 ? top1[0].split(",").map(Number) : [];
+      },
+      [x, y] as const,
+    );
 }
 
-const near = (actual: number[], expected: number[], tolerance = 6) =>
-  actual.every((v, i) => Math.abs(v - (expected[i] ?? 0)) <= tolerance);
+/**
+ * Waits until that patch shows `rgb`: pages draw after they scroll into view, and image pages
+ * draw their picture only once it has loaded from S3.
+ */
+async function expectColour(page: Page, x: number, y: number, rgb: [number, number, number]) {
+  await expect
+    .poll(
+      async () => {
+        const actual = await colourAt(page, x, y);
+        return actual.length === 3 && actual.every((v, i) => Math.abs(v - (rgb[i] ?? 0)) <= 6)
+          ? "match"
+          : actual.join(",");
+      },
+      { timeout: 20_000 },
+    )
+    .toBe("match");
+}
 
 test.describe("new notebooks", () => {
   test("an A4 portrait dot-grid notebook with 5 pages", async ({ page }) => {
@@ -189,7 +198,7 @@ test.describe("new notebooks", () => {
 
     await expectPages(page, 1, preview);
     // The paper itself is the dark paper colour, #1f2124.
-    expect(near(await colourAt(page, 0.02, 0.02), [0x1f, 0x21, 0x24])).toBe(true);
+    await expectColour(page, 0.02, 0.02, [0x1f, 0x21, 0x24]);
   });
 
   // Every template, in three groups so they spread over the workers.
@@ -313,7 +322,7 @@ test.describe("imports", () => {
     const shape = await firstPageShape(page);
     expect(shape.ratio).toBeCloseTo(300 / 200, 2);
     // Drawn from its signed S3 URL.
-    expect(near(await colourAt(page, 0.5, 0.5), [200, 30, 30])).toBe(true);
+    await expectColour(page, 0.5, 0.5, [200, 30, 30]);
 
     const stored = await storedDocument(page.url().split("/").pop() ?? "");
     expect(stored.document.type).toBe("pdf");
